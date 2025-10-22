@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent可观测性仪表板 - Palantir AI Agent System</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue/dist/index.iife.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <script src="https://unpkg.com/echarts/dist/echarts.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f5;
+        }
+        .dashboard-container {
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .metrics-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .chart-container {
+            height: 300px;
+            margin: 20px 0;
+        }
+        .metric-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .metric-item:last-child {
+            border-bottom: none;
+        }
+        .metric-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #409eff;
+        }
+        .success-rate {
+            color: #67c23a;
+        }
+        .error-rate {
+            color: #f56c6c;
+        }
+        .execution-time {
+            color: #e6a23c;
+        }
+        .back-button {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="dashboard-container">
+        <div class="back-button">
+            <el-button @click="goBack">
+                <el-icon><ArrowLeft /></el-icon>
+                返回主界面
+            </el-button>
+        </div>
+
+        <div class="header">
+            <h1>Agent可观测性仪表板</h1>
+            <p>实时监控Agent性能和执行情况</p>
+        </div>
+
+        <!-- 总体概览 -->
+        <el-card class="metrics-card">
+            <template #header>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>总体概览</span>
+                    <el-button @click="refreshData" :loading="loading">
+                        <el-icon><Refresh /></el-icon>
+                        刷新数据
+                    </el-button>
+                </div>
+            </template>
+            
+            <el-row :gutter="20" v-if="dashboardData">
+                <el-col :span="6">
+                    <div class="metric-item">
+                        <span>总Agent数</span>
+                        <span class="metric-value">{{ dashboardData.overview.total_agents }}</span>
+                    </div>
+                </el-col>
+                <el-col :span="6">
+                    <div class="metric-item">
+                        <span>总执行次数</span>
+                        <span class="metric-value">{{ dashboardData.overview.total_executions }}</span>
+                    </div>
+                </el-col>
+                <el-col :span="6">
+                    <div class="metric-item">
+                        <span>成功率</span>
+                        <span class="metric-value success-rate">{{ dashboardData.overview.success_rate.toFixed(2) }}%</span>
+                    </div>
+                </el-col>
+                <el-col :span="6">
+                    <div class="metric-item">
+                        <span>平均错误率</span>
+                        <span class="metric-value error-rate">{{ (dashboardData.overview.avg_error_rate * 100).toFixed(2) }}%</span>
+                    </div>
+                </el-col>
+            </el-row>
+        </el-card>
+
+        <!-- Agent性能图表 -->
+        <el-card class="metrics-card">
+            <template #header>
+                <span>Agent执行次数分布</span>
+            </template>
+            <div id="executionChart" class="chart-container"></div>
+        </el-card>
+
+        <!-- Agent性能指标表格 -->
+        <el-card class="metrics-card">
+            <template #header>
+                <span>Agent性能指标</span>
+            </template>
+            
+            <el-table :data="agentMetrics" style="width: 100%" v-loading="loading">
+                <el-table-column prop="agent_id" label="Agent ID" width="200"></el-table-column>
+                <el-table-column prop="total_executions" label="总执行次数" width="120"></el-table-column>
+                <el-table-column prop="successful_executions" label="成功次数" width="120"></el-table-column>
+                <el-table-column prop="failed_executions" label="失败次数" width="120"></el-table-column>
+                <el-table-column label="成功率" width="100">
+                    <template #default="scope">
+                        <span :class="getSuccessRateClass(scope.row)">
+                            {{ getSuccessRate(scope.row).toFixed(1) }}%
+                        </span>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="avg_execution_time" label="平均执行时间" width="120">
+                    <template #default="scope">
+                        <span class="execution-time">{{ scope.row.avg_execution_time.toFixed(3) }}s</span>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="last_execution" label="最后执行时间" width="180">
+                    <template #default="scope">
+                        {{ formatDate(scope.row.last_execution) }}
+                    </template>
+                </el-table-column>
+                <el-table-column label="操作" width="150">
+                    <template #default="scope">
+                        <el-button size="small" @click="viewAgentHistory(scope.row.agent_id)">
+                            查看历史
+                        </el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+        </el-card>
+
+        <!-- 执行历史对话框 -->
+        <el-dialog v-model="showHistoryDialog" title="执行历史" width="80%">
+            <el-table :data="executionHistory" style="width: 100%" v-loading="historyLoading">
+                <el-table-column prop="timestamp" label="时间" width="180">
+                    <template #default="scope">
+                        {{ formatDate(scope.row.timestamp) }}
+                    </template>
+                </el-table-column>
+                <el-table-column prop="execution_time" label="执行时间" width="100">
+                    <template #default="scope">
+                        {{ scope.row.execution_time.toFixed(3) }}s
+                    </template>
+                </el-table-column>
+                <el-table-column prop="success" label="状态" width="80">
+                    <template #default="scope">
+                        <el-tag :type="scope.row.success ? 'success' : 'danger'">
+                            {{ scope.row.success ? '成功' : '失败' }}
+                        </el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="input_type" label="输入类型" width="100"></el-table-column>
+                <el-table-column prop="output_type" label="输出类型" width="100"></el-table-column>
+                <el-table-column prop="user_input" label="用户输入" min-width="200">
+                    <template #default="scope">
+                        <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">
+                            {{ typeof scope.row.user_input === 'string' ? scope.row.user_input : JSON.stringify(scope.row.user_input) }}
+                        </div>
+                    </template>
+                </el-table-column>
+                <el-table-column label="操作" width="100">
+                    <template #default="scope">
+                        <el-button size="small" @click="viewExecutionDetail(scope.row)">
+                            详情
+                        </el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+        </el-dialog>
+
+        <!-- 执行详情对话框 -->
+        <el-dialog v-model="showDetailDialog" title="执行详情" width="80%">
+            <div v-if="selectedExecution">
+                <el-descriptions :column="2" border>
+                    <el-descriptions-item label="执行ID">{{ selectedExecution.execution_id }}</el-descriptions-item>
+                    <el-descriptions-item label="Agent ID">{{ selectedExecution.agent_id }}</el-descriptions-item>
+                    <el-descriptions-item label="执行时间">{{ selectedExecution.execution_time.toFixed(3) }}s</el-descriptions-item>
+                    <el-descriptions-item label="状态">
+                        <el-tag :type="selectedExecution.success ? 'success' : 'danger'">
+                            {{ selectedExecution.success ? '成功' : '失败' }}
+                        </el-tag>
+                    </el-descriptions-item>
+                    <el-descriptions-item label="输入类型">{{ selectedExecution.input_type }}</el-descriptions-item>
+                    <el-descriptions-item label="输出类型">{{ selectedExecution.output_type }}</el-descriptions-item>
+                </el-descriptions>
+                
+                <el-tabs v-model="activeTab" style="margin-top: 20px;">
+                    <!-- 基本信息标签页 -->
+                    <el-tab-pane label="基本信息" name="basic">
+                        <div style="margin-top: 20px;">
+                            <h4>用户输入:</h4>
+                            <el-input
+                                :model-value="JSON.stringify(selectedExecution.user_input, null, 2)"
+                                type="textarea"
+                                :rows="4"
+                                readonly
+                            ></el-input>
+                        </div>
+                        
+                        <div style="margin-top: 20px;">
+                            <h4>Agent响应:</h4>
+                            <el-input
+                                :model-value="JSON.stringify(selectedExecution.response, null, 2)"
+                                type="textarea"
+                                :rows="4"
+                                readonly
+                            ></el-input>
+                        </div>
+                        
+                        <div style="margin-top: 20px;" v-if="selectedExecution.error_message">
+                            <h4>错误信息:</h4>
+                            <el-alert :title="selectedExecution.error_message" type="error"></el-alert>
+                        </div>
+                    </el-tab-pane>
+                    
+                    <!-- 执行时间线标签页 -->
+                    <el-tab-pane label="执行时间线" name="timeline">
+                        <div v-loading="timelineLoading" style="padding: 20px;">
+                            <el-empty v-if="!executionTimeline || executionTimeline.length === 0" description="暂无执行记录"></el-empty>
+                            
+                            <el-timeline v-else>
+                                <el-timeline-item
+                                    v-for="(item, index) in executionTimeline"
+                                    :key="index"
+                                    :timestamp="formatDate(item.timestamp)"
+                                    placement="top"
+                                    :type="getTimelineItemType(item)"
+                                    :icon="getTimelineIcon(item)"
+                                >
+                                    <!-- LLM调用 -->
+                                    <el-card v-if="item.type === 'llm_call'" shadow="hover">
+                                        <template #header>
+                                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                <span><el-icon><ChatDotRound /></el-icon> LLM调用</span>
+                                                <el-tag :type="item.data.success ? 'success' : 'danger'" size="small">
+                                                    {{ item.data.success ? '成功' : '失败' }}
+                                                </el-tag>
+                                            </div>
+                                        </template>
+                                        
+                                        <el-descriptions :column="2" size="small">
+                                            <el-descriptions-item label="模型">{{ item.data.model }}</el-descriptions-item>
+                                            <el-descriptions-item label="调用时间">{{ item.data.call_time.toFixed(3) }}s</el-descriptions-item>
+                                            <el-descriptions-item label="Token使用" v-if="item.data.tokens_used">
+                                                {{ item.data.tokens_used }}
+                                            </el-descriptions-item>
+                                        </el-descriptions>
+                                        
+                                        <el-collapse style="margin-top: 10px;">
+                                            <el-collapse-item title="查看消息" name="messages">
+                                                <div style="max-height: 200px; overflow-y: auto;">
+                                                    <div v-for="(msg, idx) in item.data.messages" :key="idx" style="margin-bottom: 10px;">
+                                                        <el-tag size="small" style="margin-right: 10px;">{{ msg.role }}</el-tag>
+                                                        <span>{{ msg.content }}</span>
+                                                    </div>
+                                                </div>
+                                            </el-collapse-item>
+                                            <el-collapse-item title="查看响应" name="response">
+                                                <el-input
+                                                    :model-value="item.data.response"
+                                                    type="textarea"
+                                                    :rows="4"
+                                                    readonly
+                                                ></el-input>
+                                            </el-collapse-item>
+                                        </el-collapse>
+                                        
+                                        <div v-if="item.data.error_message" style="margin-top: 10px;">
+                                            <el-alert :title="item.data.error_message" type="error" :closable="false"></el-alert>
+                                        </div>
+                                    </el-card>
+                                    
+                                    <!-- 工具调用 -->
+                                    <el-card v-else-if="item.type === 'tool_call'" shadow="hover">
+                                        <template #header>
+                                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                <span><el-icon><Tools /></el-icon> 工具调用: {{ item.data.tool_name }}</span>
+                                                <el-tag :type="item.data.success ? 'success' : 'danger'" size="small">
+                                                    {{ item.data.success ? '成功' : '失败' }}
+                                                </el-tag>
+                                            </div>
+                                        </template>
+                                        
+                                        <el-descriptions :column="2" size="small">
+                                            <el-descriptions-item label="工具类型">{{ item.data.tool_type }}</el-descriptions-item>
+                                            <el-descriptions-item label="调用时间">{{ item.data.call_time.toFixed(3) }}s</el-descriptions-item>
+                                        </el-descriptions>
+                                        
+                                        <el-collapse style="margin-top: 10px;">
+                                            <el-collapse-item title="输入参数" name="input">
+                                                <el-input
+                                                    :model-value="JSON.stringify(item.data.input_params, null, 2)"
+                                                    type="textarea"
+                                                    :rows="3"
+                                                    readonly
+                                                ></el-input>
+                                            </el-collapse-item>
+                                            <el-collapse-item title="输出结果" name="output">
+                                                <el-input
+                                                    :model-value="item.data.output"
+                                                    type="textarea"
+                                                    :rows="3"
+                                                    readonly
+                                                ></el-input>
+                                            </el-collapse-item>
+                                        </el-collapse>
+                                        
+                                        <div v-if="item.data.error_message" style="margin-top: 10px;">
+                                            <el-alert :title="item.data.error_message" type="error" :closable="false"></el-alert>
+                                        </div>
+                                    </el-card>
+                                </el-timeline-item>
+                            </el-timeline>
+                        </div>
+                    </el-tab-pane>
+                </el-tabs>
+            </div>
+        </el-dialog>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+        const { ElMessage } = ElementPlus;
+        
+        // Register Element Plus Icons
+        const IconsVue = ElementPlusIconsVue;
+
+        const app = createApp({
+            data() {
+                return {
+                    dashboardData: null,
+                    agentMetrics: [],
+                    executionHistory: [],
+                    selectedExecution: null,
+                    executionTimeline: [],
+                    loading: false,
+                    historyLoading: false,
+                    timelineLoading: false,
+                    showHistoryDialog: false,
+                    showDetailDialog: false,
+                    currentAgentId: null,
+                    executionChart: null,
+                    activeTab: 'basic'
+                };
+            },
+            
+            mounted() {
+                this.loadDashboardData();
+                this.initChart();
+            },
+            
+            methods: {
+                async loadDashboardData() {
+                    this.loading = true;
+                    try {
+                        const response = await fetch('/api/observability/dashboard');
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            this.dashboardData = result.data;
+                            this.agentMetrics = result.data.agent_metrics;
+                            this.updateChart();
+                        } else {
+                            ElMessage.error('加载数据失败');
+                        }
+                    } catch (error) {
+                        ElMessage.error('网络错误: ' + error.message);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                async refreshData() {
+                    await this.loadDashboardData();
+                    ElMessage.success('数据已刷新');
+                },
+                
+                async viewAgentHistory(agentId) {
+                    this.currentAgentId = agentId;
+                    this.showHistoryDialog = true;
+                    this.historyLoading = true;
+                    
+                    try {
+                        const response = await fetch(`/api/observability/history?agent_id=${agentId}&limit=100`);
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            this.executionHistory = result.data;
+                        } else {
+                            ElMessage.error('加载历史记录失败');
+                        }
+                    } catch (error) {
+                        ElMessage.error('网络错误: ' + error.message);
+                    } finally {
+                        this.historyLoading = false;
+                    }
+                },
+                
+                async viewExecutionDetail(execution) {
+                    this.selectedExecution = execution;
+                    this.showDetailDialog = true;
+                    this.activeTab = 'basic';
+                    
+                    // 加载执行时间线
+                    await this.loadExecutionTimeline(execution.execution_id);
+                },
+                
+                async loadExecutionTimeline(executionId) {
+                    this.timelineLoading = true;
+                    this.executionTimeline = [];
+                    
+                    try {
+                        const response = await fetch(`/api/observability/execution-timeline?execution_id=${executionId}`);
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            this.executionTimeline = result.data;
+                        } else {
+                            ElMessage.error('加载执行时间线失败');
+                        }
+                    } catch (error) {
+                        ElMessage.error('网络错误: ' + error.message);
+                    } finally {
+                        this.timelineLoading = false;
+                    }
+                },
+                
+                getTimelineItemType(item) {
+                    if (!item.data.success) return 'danger';
+                    return item.type === 'llm_call' ? 'primary' : 'success';
+                },
+                
+                getTimelineIcon(item) {
+                    return item.type === 'llm_call' ? 'ChatDotRound' : 'Tools';
+                },
+                
+                initChart() {
+                    this.executionChart = echarts.init(document.getElementById('executionChart'));
+                },
+                
+                updateChart() {
+                    if (!this.executionChart || !this.agentMetrics) return;
+                    
+                    const option = {
+                        title: {
+                            text: 'Agent执行次数分布',
+                            left: 'center'
+                        },
+                        tooltip: {
+                            trigger: 'axis',
+                            axisPointer: {
+                                type: 'shadow'
+                            }
+                        },
+                        xAxis: {
+                            type: 'category',
+                            data: this.agentMetrics.map(m => m.agent_id.substring(0, 8) + '...'),
+                            axisLabel: {
+                                rotate: 45
+                            }
+                        },
+                        yAxis: {
+                            type: 'value'
+                        },
+                        series: [{
+                            name: '执行次数',
+                            type: 'bar',
+                            data: this.agentMetrics.map(m => m.total_executions),
+                            itemStyle: {
+                                color: '#409eff'
+                            }
+                        }]
+                    };
+                    
+                    this.executionChart.setOption(option);
+                },
+                
+                getSuccessRate(row) {
+                    if (row.total_executions === 0) return 0;
+                    return (row.successful_executions / row.total_executions) * 100;
+                },
+                
+                getSuccessRateClass(row) {
+                    const rate = this.getSuccessRate(row);
+                    if (rate >= 95) return 'success-rate';
+                    if (rate >= 80) return 'execution-time';
+                    return 'error-rate';
+                },
+                
+                formatDate(dateString) {
+                    if (!dateString) return '';
+                    const date = new Date(dateString);
+                    return date.toLocaleString('zh-CN');
+                },
+                
+                goBack() {
+                    window.location.href = '/static/index.html';
+                }
+            }
+        });
+        
+        // Register all icons globally
+        for (const [key, component] of Object.entries(IconsVue)) {
+            app.component(key, component);
+        }
+        
+        app.use(ElementPlus).mount('#app');
+    </script>
+</body>
+</html>

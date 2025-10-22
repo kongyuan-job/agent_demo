@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Palantir AI Agent System</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue/dist/index.iife.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/theme-chalk/dark/css-vars.css">
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f5;
+        }
+        .app-container {
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .main-content {
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .agent-card {
+            margin-bottom: 20px;
+            transition: transform 0.2s;
+        }
+        .agent-card:hover {
+            transform: translateY(-2px);
+        }
+        .config-form {
+            background: white;
+            padding: 24px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .chat-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            height: 600px;
+            display: flex;
+            flex-direction: column;
+        }
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            border-bottom: 1px solid #eee;
+        }
+        .chat-input {
+            padding: 20px;
+            border-top: 1px solid #eee;
+        }
+        .message {
+            margin-bottom: 16px;
+            display: flex;
+            align-items: flex-start;
+        }
+        .message.user {
+            justify-content: flex-end;
+        }
+        .message-content {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+        .message.user .message-content {
+            background: #007bff;
+            color: white;
+        }
+        .message.assistant .message-content {
+            background: #f1f3f4;
+            color: #333;
+        }
+        .status-badge {
+            margin-left: 8px;
+        }
+        .tool-item {
+            border: 1px solid #e4e7ed;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 8px;
+            background: #fafafa;
+        }
+        .parameter-item {
+            border: 1px solid #e4e7ed;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 8px;
+            background: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="app-container">
+        <el-container>
+            <!-- 头部 -->
+            <el-header class="header">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h1 style="margin: 0; font-size: 24px;">
+                            <el-icon><Cpu /></el-icon>
+                            Palantir AI Agent System
+                        </h1>
+                        <p style="margin: 5px 0 0 0; opacity: 0.9;">动态AI Agent创建和管理平台</p>
+                    </div>
+                    <div>
+                        <el-button @click="goToObservability" style="margin-right: 10px;">
+                            <el-icon><DataAnalysis /></el-icon>
+                            可观测性
+                        </el-button>
+                        <el-button type="primary" @click="showCreateDialog = true">
+                            <el-icon><Plus /></el-icon>
+                            创建Agent
+                        </el-button>
+                    </div>
+                </div>
+            </el-header>
+
+            <!-- 主内容区 -->
+            <el-main class="main-content">
+                <!-- 概览统计 -->
+                <el-row :gutter="20" style="margin-bottom: 20px;">
+                    <el-col :span="6">
+                        <el-card>
+                            <div style="text-align: center;">
+                                <div style="font-size: 32px; color: #409eff; margin-bottom: 8px;">
+                                    {{ agentList.length }}
+                                </div>
+                                <div>总Agent数</div>
+                            </div>
+                        </el-card>
+                    </el-col>
+                    <el-col :span="6">
+                        <el-card>
+                            <div style="text-align: center;">
+                                <div style="font-size: 32px; color: #67c23a; margin-bottom: 8px;">
+                                    {{ activeAgentCount }}
+                                </div>
+                                <div>活跃Agent</div>
+                            </div>
+                        </el-card>
+                    </el-col>
+                    <el-col :span="6">
+                        <el-card>
+                            <div style="text-align: center;">
+                                <div style="font-size: 32px; color: #e6a23c; margin-bottom: 8px;">
+                                    {{ totalChats }}
+                                </div>
+                                <div>总对话数</div>
+                            </div>
+                        </el-card>
+                    </el-col>
+                    <el-col :span="6">
+                        <el-card>
+                            <div style="text-align: center;">
+                                <div style="font-size: 32px; color: #f56c6c; margin-bottom: 8px;">
+                                    {{ errorAgentCount }}
+                                </div>
+                                <div>错误Agent</div>
+                            </div>
+                        </el-card>
+                    </el-col>
+                </el-row>
+
+                <!-- Agent列表 -->
+                <el-card>
+                    <template #header>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>Agent管理</span>
+                            <el-input
+                                v-model="searchKeyword"
+                                placeholder="搜索Agent..."
+                                style="width: 300px;"
+                                clearable
+                            >
+                                <template #prefix>
+                                    <el-icon><Search /></el-icon>
+                                </template>
+                            </el-input>
+                        </div>
+                    </template>
+
+                    <el-row :gutter="20">
+                        <el-col :span="8" v-for="agent in filteredAgents" :key="agent.id">
+                            <el-card class="agent-card" @click="selectAgent(agent)">
+                                <div style="display: flex; justify-content: space-between; align-items: start;">
+                                    <div style="flex: 1;">
+                                        <h3 style="margin: 0 0 8px 0;">{{ agent.name }}</h3>
+                                        <p style="color: #666; margin: 0 0 12px 0; font-size: 14px;">
+                                            {{ agent.description }}
+                                        </p>
+                                        <div style="font-size: 12px; color: #999;">
+                                            创建时间: {{ formatDate(agent.created_at) }}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <el-tag 
+                                            :type="getStatusType(agent.status)" 
+                                            class="status-badge"
+                                        >
+                                            {{ agent.status }}
+                                        </el-tag>
+                                    </div>
+                                </div>
+                                <div style="margin-top: 12px; text-align: right;">
+                                    <el-button size="small" @click.stop="editAgent(agent)">编辑</el-button>
+                                    <el-button size="small" type="primary" @click.stop="testAgent(agent)">测试</el-button>
+                                    <el-button size="small" type="danger" @click.stop="deleteAgent(agent)">删除</el-button>
+                                </div>
+                            </el-card>
+                        </el-col>
+                    </el-row>
+                </el-card>
+
+                <!-- 测试聊天区域 -->
+                <el-card v-if="selectedAgent" style="margin-top: 20px;">
+                    <template #header>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>测试Agent: {{ selectedAgent.name }}</span>
+                            <el-button @click="selectedAgent = null">关闭</el-button>
+                        </div>
+                    </template>
+                    
+                    <div class="chat-container">
+                        <div class="chat-messages" ref="chatMessages">
+                            <div v-for="(message, index) in chatMessages" :key="index" 
+                                 :class="['message', message.role]">
+                                <div class="message-content">
+                                    {{ message.content }}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chat-input">
+                            <el-row :gutter="10">
+                                <el-col :span="18">
+                                    <el-input
+                                        v-model="chatInput"
+                                        placeholder="输入消息..."
+                                        @keyup.enter="sendMessage"
+                                        :loading="chatLoading"
+                                    ></el-input>
+                                </el-col>
+                                <el-col :span="6">
+                                    <el-select v-model="inputType" placeholder="输入类型" style="width: 100%;">
+                                        <el-option label="字符串" value="string"></el-option>
+                                        <el-option label="JSON对象" value="object"></el-option>
+                                        <el-option label="数字" value="number"></el-option>
+                                        <el-option label="数组" value="array"></el-option>
+                                    </el-select>
+                                </el-col>
+                            </el-row>
+                            <div style="margin-top: 10px;">
+                                <el-button @click="sendMessage" :loading="chatLoading" type="primary" style="width: 100%;">
+                                    发送消息
+                                </el-button>
+                            </div>
+                        </div>
+                    </div>
+                </el-card>
+            </el-main>
+        </el-container>
+
+        <!-- 创建/编辑Agent对话框 -->
+        <el-dialog 
+            v-model="showCreateDialog" 
+            :title="editingAgent ? '编辑Agent' : '创建Agent'"
+            width="80%"
+            :close-on-click-modal="false"
+        >
+            <el-form :model="agentForm" label-width="120px" :rules="formRules" ref="agentFormRef">
+                <el-tabs v-model="activeTab">
+                    <!-- 基础信息 -->
+                    <el-tab-pane label="基础信息" name="basic">
+                        <el-form-item label="Agent名称" prop="name">
+                            <el-input v-model="agentForm.name" placeholder="请输入Agent名称"></el-input>
+                        </el-form-item>
+                        <el-form-item label="描述" prop="description">
+                            <el-input 
+                                v-model="agentForm.description" 
+                                type="textarea" 
+                                :rows="3"
+                                placeholder="请输入Agent描述"
+                            ></el-input>
+                        </el-form-item>
+                        <el-form-item label="系统提示词" prop="system_prompt">
+                            <el-input 
+                                v-model="agentForm.system_prompt" 
+                                type="textarea" 
+                                :rows="4"
+                                placeholder="定义Agent的基础角色和行为准则"
+                            ></el-input>
+                        </el-form-item>
+                        <el-form-item label="用户提示词模板" prop="user_prompt_template">
+                            <el-input 
+                                v-model="agentForm.user_prompt_template" 
+                                type="textarea" 
+                                :rows="3"
+                                placeholder="支持变量替换，如{user_input}"
+                            ></el-input>
+                        </el-form-item>
+                    </el-tab-pane>
+
+                    <!-- 输入输出格式 -->
+                    <el-tab-pane label="输入输出格式" name="io">
+                        <div>
+                            <h4>输入参数</h4>
+                            <div v-for="(param, index) in agentForm.input_format" :key="index" class="parameter-item">
+                                <el-row :gutter="10">
+                                    <el-col :span="6">
+                                        <el-input v-model="param.name" placeholder="参数名"></el-input>
+                                    </el-col>
+                                    <el-col :span="4">
+                                        <el-select v-model="param.type" placeholder="类型">
+                                            <el-option label="字符串" value="string"></el-option>
+                                            <el-option label="整数" value="integer"></el-option>
+                                            <el-option label="浮点数" value="float"></el-option>
+                                            <el-option label="布尔值" value="boolean"></el-option>
+                                            <el-option label="数组" value="array"></el-option>
+                                            <el-option label="对象" value="object"></el-option>
+                                        </el-select>
+                                    </el-col>
+                                    <el-col :span="6">
+                                        <el-input v-model="param.description" placeholder="描述"></el-input>
+                                    </el-col>
+                                    <el-col :span="4">
+                                        <el-checkbox v-model="param.required">必填</el-checkbox>
+                                    </el-col>
+                                    <el-col :span="4">
+                                        <el-button type="danger" @click="removeParameter('input', index)">删除</el-button>
+                                    </el-col>
+                                </el-row>
+                            </div>
+                            <el-button @click="addParameter('input')">添加输入参数</el-button>
+                        </div>
+
+                        <div style="margin-top: 20px;">
+                            <h4>输出参数</h4>
+                            <div v-for="(param, index) in agentForm.output_format" :key="index" class="parameter-item">
+                                <el-row :gutter="10">
+                                    <el-col :span="6">
+                                        <el-input v-model="param.name" placeholder="参数名"></el-input>
+                                    </el-col>
+                                    <el-col :span="4">
+                                        <el-select v-model="param.type" placeholder="类型">
+                                            <el-option label="字符串" value="string"></el-option>
+                                            <el-option label="整数" value="integer"></el-option>
+                                            <el-option label="浮点数" value="float"></el-option>
+                                            <el-option label="布尔值" value="boolean"></el-option>
+                                            <el-option label="数组" value="array"></el-option>
+                                            <el-option label="对象" value="object"></el-option>
+                                        </el-select>
+                                    </el-col>
+                                    <el-col :span="6">
+                                        <el-input v-model="param.description" placeholder="描述"></el-input>
+                                    </el-col>
+                                    <el-col :span="4">
+                                        <el-checkbox v-model="param.required">必填</el-checkbox>
+                                    </el-col>
+                                    <el-col :span="4">
+                                        <el-button type="danger" @click="removeParameter('output', index)">删除</el-button>
+                                    </el-col>
+                                </el-row>
+                            </div>
+                            <el-button @click="addParameter('output')">添加输出参数</el-button>
+                        </div>
+                    </el-tab-pane>
+
+                    <!-- 工具配置 -->
+                    <el-tab-pane label="工具配置" name="tools">
+                        <div v-for="(tool, index) in agentForm.tools" :key="index" class="tool-item">
+                            <el-row :gutter="10">
+                                <el-col :span="4">
+                                    <el-input v-model="tool.name" placeholder="工具名称"></el-input>
+                                </el-col>
+                                <el-col :span="4">
+                                    <el-select v-model="tool.type" placeholder="工具类型">
+                                        <el-option label="知识库" value="knowledge_base"></el-option>
+                                        <el-option label="计算器" value="calculator"></el-option>
+                                        <el-option label="网络搜索" value="web_search"></el-option>
+                                        <el-option label="API调用" value="api_call"></el-option>
+                                        <el-option label="自定义函数" value="custom_function"></el-option>
+                                    </el-select>
+                                </el-col>
+                                <el-col :span="8">
+                                    <el-input v-model="tool.description" placeholder="工具描述"></el-input>
+                                </el-col>
+                                <el-col :span="4">
+                                    <el-button @click="editToolConfig(tool)">配置</el-button>
+                                </el-col>
+                                <el-col :span="4">
+                                    <el-button type="danger" @click="removeTool(index)">删除</el-button>
+                                </el-col>
+                            </el-row>
+                        </div>
+                        <el-button @click="addTool">添加工具</el-button>
+                    </el-tab-pane>
+
+                    <!-- 高级设置 -->
+                    <el-tab-pane label="高级设置" name="advanced">
+                        <el-form-item label="温度值">
+                            <el-slider 
+                                v-model="agentForm.temperature" 
+                                :min="0" 
+                                :max="2" 
+                                :step="0.1"
+                                show-input
+                            ></el-slider>
+                        </el-form-item>
+                        <el-form-item label="最大Token数">
+                            <el-input-number 
+                                v-model="agentForm.max_tokens" 
+                                :min="1" 
+                                :max="4000"
+                                style="width: 200px;"
+                            ></el-input-number>
+                        </el-form-item>
+                    </el-tab-pane>
+                </el-tabs>
+            </el-form>
+
+            <template #footer>
+                <div style="text-align: right;">
+                    <el-button @click="showCreateDialog = false">取消</el-button>
+                    <el-button type="primary" @click="saveAgent" :loading="saving">
+                        {{ editingAgent ? '更新' : '创建' }}
+                    </el-button>
+                </div>
+            </template>
+        </el-dialog>
+
+        <!-- 工具配置对话框 -->
+        <el-dialog v-model="showToolConfigDialog" title="工具配置" width="60%">
+            <el-form :model="toolConfig" label-width="120px">
+                <el-form-item label="API URL" v-if="currentTool.type === 'api_call'">
+                    <el-input v-model="toolConfig.url" placeholder="https://api.example.com/endpoint"></el-input>
+                </el-form-item>
+                <el-form-item label="请求方法" v-if="currentTool.type === 'api_call'">
+                    <el-select v-model="toolConfig.method">
+                        <el-option label="GET" value="GET"></el-option>
+                        <el-option label="POST" value="POST"></el-option>
+                        <el-option label="PUT" value="PUT"></el-option>
+                        <el-option label="DELETE" value="DELETE"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="请求头" v-if="currentTool.type === 'api_call'">
+                    <el-input 
+                        v-model="toolConfig.headers" 
+                        type="textarea" 
+                        :rows="3"
+                        placeholder='{"Authorization": "Bearer token", "Content-Type": "application/json"}'
+                    ></el-input>
+                </el-form-item>
+            </el-form>
+            
+            <template #footer>
+                <el-button @click="showToolConfigDialog = false">取消</el-button>
+                <el-button type="primary" @click="saveToolConfig">保存</el-button>
+            </template>
+        </el-dialog>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+{
+  "b8273029-f05d-441a-87fc-1ba95b40d4dd": {
+    "id": "b8273029-f05d-441a-87fc-1ba95b40d4dd",
+    "config": {
+      "id": "fc1b04a3-8aeb-47fa-8f74-2aa0edc2f109",
+      "name": "demo",
+      "description": "demo",
+      "system_prompt": "你是一个数学专家",
+      "user_prompt_template": "选择计算工具计算数学问题，{user_input}",
+      "input_format": [
+        {
+          "name": "input",
+          "type": "string",
+          "description": "用户输入问题",
+          "required": true,
+          "default_value": null,
+          "enum_values": null
+        }
+      ],
+      "output_format": [
+        {
+          "name": "output",
+          "type": "string",
+          "description": "agent输出",
+          "required": true,
+          "default_value": null,
+          "enum_values": null
+        }
+      ],
+      "tools": [
+        {
+          "id": "1761147661452",
+          "name": "caculator",
+          "description": "",
+          "type": "calculator",
+          "parameters": [],
+          "config": {}
+        }
+      ],
+      "temperature": 0.0,
+      "max_tokens": 1000,
+      "status": "draft",
+      "created_at": "2025-10-22T23:41:16.279387",
+      "updated_at": "2025-10-22T23:41:16.279387"
+    },
+    "created_at": "2025-10-22T23:41:17.273678"
+  }
+}
