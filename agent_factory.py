@@ -1,5 +1,6 @@
 import json
 import asyncio
+from langchain_core.messages.system import SystemMessage
 import time
 import json
 import os
@@ -20,7 +21,7 @@ import operator
 
 from models import AgentConfig, Tool as ToolConfig, ParameterType, ToolType, ChatRequest, ChatMessage
 from config import Config
-from observability import log_agent_execution, log_tool_call, log_llm_call
+from observability import log_agent_execution, log_tool_call, log_llm_call, observability_manager, AgentExecution
 
 # 定义状态类型 - 支持动态输入输出类型
 class AgentState(TypedDict):
@@ -88,7 +89,7 @@ class AgentFactory:
     
     def create_tool_from_config(self, tool_config: ToolConfig) -> LangChainTool:
         """根据配置创建LangChain工具"""
-        from langchain_core.pydantic_v1 import BaseModel, Field as PydanticField
+        from pydantic import BaseModel, Field as PydanticField
         
         # 根据工具类型创建输入模型
         if tool_config.type == ToolType.CALCULATOR:
@@ -326,12 +327,24 @@ class AgentFactory:
             execution_id = state.get("execution_id", "")
             agent_id = state.get("agent_id", "")
             
-            # 构建系统消息
-            system_message = SystemMessage(content=config.system_prompt)
+            # 构建系统消息 - 添加工具使用指导
+            system_prompt = config.system_prompt
+            if tools:
+                # 如果有工具，添加明确的指导原则
+                tool_guidance = (
+                    "\n\n重要指导原则："
+                    "\n1. 当需要使用工具时，调用相应的工具获取信息。"
+                    "\n2. 工具返回结果后，基于结果给出最终答案，不要重复调用同一工具。"
+                    "\n3. 如果工具已经提供了答案，直接使用该答案回复用户，不要再次调用工具。"
+                    "\n4. 一旦得到所需信息，立即给出完整的最终回复，结束对话。"
+                )
+                system_prompt = system_prompt + tool_guidance
+            
+            system_message: SystemMessage = SystemMessage(content=system_prompt)
             
             # 处理动态输入类型
             user_input = state.get("user_input", "")
-            input_data = state.get("input_data", {})
+            input_data = state.get("input_data", {}) or {}  # Ensure it's never None
             
             # 根据输入类型构建用户消息
             try:
@@ -354,8 +367,8 @@ class AgentFactory:
                         user_input=str(user_input),
                         **input_data
                     )
-            except KeyError as e:
-                # 如果模板中缺少占位符，使用默认格式
+            except (KeyError, TypeError) as e:
+                # 如果模板中缺少占位符或参数错误，使用默认格式
                 formatted_input = f"用户输入：{user_input}\n{config.user_prompt_template}"
             
             user_message = HumanMessage(content=formatted_input)
@@ -363,7 +376,15 @@ class AgentFactory:
             # 调用LLM - 添加观测
             llm_start_time = time.time()
             try:
-                response = llm.invoke([system_message] + messages + [user_message])
+                # 只在第一次调用时添加用户消息，后续调用只使用messages（包含工具调用历史）
+                if not messages:
+                    # 第一次调用：添加用户消息
+                    conversation = [system_message, user_message]
+                else:
+                    # 后续调用：使用已有的消息历史（包含工具调用和结果）
+                    conversation = [system_message] + messages
+                print(conversation)
+                response = llm.invoke(conversation)
                 llm_call_time = time.time() - llm_start_time
                 
                 # 记录LLM调用
@@ -516,6 +537,159 @@ class AgentFactory:
         
         return agent_id
     
+    async def chat_with_agent_stream(self, request: ChatRequest):
+        """与Agent对话 - 流式输出版本"""
+        agent_id = request.agent_id
+        start_time = time.time()
+        
+        if agent_id not in self.agents:
+            error_msg = f"Agent {agent_id} 不存在"
+            yield {
+                "type": "error",
+                "message": error_msg,
+                "timestamp": datetime.now().isoformat()
+            }
+            return
+        
+        agent_info = self.agents[agent_id]
+        agent_graph = agent_info["graph"]
+        execution_id = str(uuid.uuid4())
+        
+        try:
+            # 发送开始事件
+            yield {
+                "type": "start",
+                "execution_id": execution_id,
+                "agent_id": agent_id,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # 构建初始状态
+            initial_state = {
+                "messages": [],
+                "user_input": request.user_input,
+                "response": "",
+                "input_data": getattr(request, 'input_data', None) or {},  # Ensure never None
+                "output_data": {},
+                "execution_id": execution_id,
+                "agent_id": agent_id
+            }
+            
+            # 添加历史对话
+            for msg in request.conversation_history:
+                if msg.role == "user":
+                    initial_state["messages"].append(HumanMessage(content=msg.content))
+                elif msg.role == "assistant":
+                    initial_state["messages"].append(AIMessage(content=msg.content))
+            
+            # 流式执行Agent
+            config = {
+                "configurable": {"thread_id": f"thread_{agent_id}"},
+                "recursion_limit": 50  # Increase limit to prevent premature termination
+            }
+            final_result = None
+            
+            async for event in agent_graph.astream(initial_state, config):
+                # event 是一个字典，key是节点名，value是该节点的输出
+                for node_name, node_output in event.items():
+                    if node_name == "agent":
+                        # Agent节点输出
+                        messages = node_output.get("messages", [])
+                        if messages:
+                            last_message = messages[-1]
+                            
+                            # LLM响应
+                            if hasattr(last_message, 'content'):
+                                yield {
+                                    "type": "agent_message",
+                                    "content": last_message.content,
+                                    "timestamp": datetime.now().isoformat()
+                                }
+                            
+                            # 工具调用
+                            if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+                                for tool_call in last_message.tool_calls:
+                                    yield {
+                                        "type": "tool_call_start",
+                                        "tool_name": tool_call.get('name', 'unknown'),
+                                        "tool_args": tool_call.get('args', {}),
+                                        "timestamp": datetime.now().isoformat()
+                                    }
+                    
+                    elif node_name == "tools":
+                        # 工具节点输出
+                        messages = node_output.get("messages", [])
+                        if messages:
+                            last_message = messages[-1]
+                            if hasattr(last_message, 'content'):
+                                yield {
+                                    "type": "tool_result",
+                                    "content": last_message.content,
+                                    "timestamp": datetime.now().isoformat()
+                                }
+                    
+                    # 保存最终结果
+                    final_result = node_output
+            
+            # 执行完成
+            execution_time = time.time() - start_time
+            response_data = final_result.get("response", "") if final_result else ""
+            
+            # 记录执行
+            final_execution = AgentExecution(
+                execution_id=execution_id,
+                agent_id=agent_id,
+                user_input=request.user_input,
+                response=response_data,
+                input_type=type(request.user_input).__name__,
+                output_type=type(response_data).__name__,
+                execution_time=execution_time,
+                timestamp=datetime.now().isoformat(),
+                metadata={
+                    "conversation_length": len(request.conversation_history),
+                    "output_data": final_result.get("output_data", {}) if final_result else {}
+                },
+                success=True
+            )
+            observability_manager.log_execution(final_execution)
+            
+            # 发送完成事件
+            yield {
+                "type": "done",
+                "response": response_data,
+                "output_data": final_result.get("output_data", {}) if final_result else {},
+                "execution_id": execution_id,
+                "execution_time": execution_time,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            error_msg = f"对话失败: {str(e)}"
+            
+            # 记录失败的执行
+            if execution_id:
+                final_execution = AgentExecution(
+                    execution_id=execution_id,
+                    agent_id=agent_id,
+                    user_input=request.user_input,
+                    response=None,
+                    input_type=type(request.user_input).__name__,
+                    output_type="None",
+                    execution_time=execution_time,
+                    timestamp=datetime.now().isoformat(),
+                    metadata={"error_type": "execution_error", "error_details": str(e)},
+                    success=False,
+                    error_message=error_msg
+                )
+                observability_manager.log_execution(final_execution)
+            
+            yield {
+                "type": "error",
+                "message": error_msg,
+                "timestamp": datetime.now().isoformat()
+            }
+
     async def chat_with_agent(self, request: ChatRequest) -> Dict[str, Any]:
         """与Agent对话 - 支持动态输入输出类型"""
         agent_id = request.agent_id
@@ -550,7 +724,7 @@ class AgentFactory:
                 "messages": [],
                 "user_input": request.user_input,
                 "response": "",
-                "input_data": getattr(request, 'input_data', {}),
+                "input_data": getattr(request, 'input_data', None) or {},  # Ensure never None
                 "output_data": {},
                 "execution_id": execution_id,  # 添加执行ID
                 "agent_id": agent_id  # 添加Agent ID
@@ -564,26 +738,32 @@ class AgentFactory:
                     initial_state["messages"].append(AIMessage(content=msg.content))
             
             # 执行Agent
-            config = {"configurable": {"thread_id": f"thread_{agent_id}"}}
+            config = {
+                "configurable": {"thread_id": f"thread_{agent_id}"},
+                "recursion_limit": 50  # Increase limit to prevent premature termination
+            }
             result = await agent_graph.ainvoke(initial_state, config)
             
             execution_time = time.time() - start_time
             response_data = result.get("response", "")
             
-            # 记录成功的执行
-            execution_id = log_agent_execution(
+            # 记录成功的执行 - 使用同一个execution_id
+            final_execution = AgentExecution(
+                execution_id=execution_id,  # 使用已生成的execution_id
                 agent_id=agent_id,
                 user_input=request.user_input,
                 response=response_data,
+                input_type=type(request.user_input).__name__,
+                output_type=type(response_data).__name__,
                 execution_time=execution_time,
-                success=True,
+                timestamp=datetime.now().isoformat(),
                 metadata={
-                    "input_type": type(request.user_input).__name__,
-                    "output_type": type(response_data).__name__,
                     "conversation_length": len(request.conversation_history),
                     "output_data": result.get("output_data", {})
-                }
+                },
+                success=True
             )
+            observability_manager.log_execution(final_execution)
             
             return {
                 "success": True,
@@ -604,16 +784,33 @@ class AgentFactory:
             execution_time = time.time() - start_time
             error_msg = f"对话失败: {str(e)}"
             
-            # 记录失败的执行
-            log_agent_execution(
-                agent_id=agent_id,
-                user_input=request.user_input,
-                response=None,
-                execution_time=execution_time,
-                success=False,
-                error_message=error_msg,
-                metadata={"error_type": "execution_error", "error_details": str(e)}
-            )
+            # 记录失败的执行 - 使用同一个execution_id
+            if 'execution_id' in locals():
+                final_execution = AgentExecution(
+                    execution_id=execution_id,
+                    agent_id=agent_id,
+                    user_input=request.user_input,
+                    response=None,
+                    input_type=type(request.user_input).__name__,
+                    output_type="None",
+                    execution_time=execution_time,
+                    timestamp=datetime.now().isoformat(),
+                    metadata={"error_type": "execution_error", "error_details": str(e)},
+                    success=False,
+                    error_message=error_msg
+                )
+                observability_manager.log_execution(final_execution)
+            else:
+                # 如果还没有生成execution_id，使用旧方法
+                log_agent_execution(
+                    agent_id=agent_id,
+                    user_input=request.user_input,
+                    response=None,
+                    execution_time=execution_time,
+                    success=False,
+                    error_message=error_msg,
+                    metadata={"error_type": "execution_error", "error_details": str(e)}
+                )
             
             return {
                 "success": False,

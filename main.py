@@ -172,47 +172,27 @@ async def chat_with_agent(request: ChatRequest):
 
 @app.post("/api/chat/stream")
 async def chat_with_agent_stream(request: ChatRequest):
-    """流式对话（SSE）"""
+    """流式对话（SSE）- 真实的LangGraph流式输出"""
     async def generate():
         try:
-            # 这里可以实现流式响应
-            result = await agent_factory.chat_with_agent(request)
-            
-            # 模拟流式输出
-            response_text = result.get("response", "")
-            words = response_text.split()
-            
-            for i, word in enumerate(words):
-                chunk = {
-                    "type": "chunk",
-                    "content": word + " ",
-                    "index": i,
-                    "total": len(words)
-                }
-                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.1)  # 模拟延迟
-            
-            # 发送结束信号
-            final_chunk = {
-                "type": "done",
-                "metadata": result.get("metadata", {})
-            }
-            yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
-            
+            async for event in agent_factory.chat_with_agent_stream(request):
+                # 将事件转换为SSE格式
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
-            error_chunk = {
+            error_event = {
                 "type": "error",
-                "message": str(e)
+                "message": str(e),
+                "timestamp": datetime.now().isoformat()
             }
-            yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
     
     return StreamingResponse(
         generate(),
-        media_type="text/plain",
+        media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "Content-Type": "text/event-stream"
+            "X-Accel-Buffering": "no"  # 禁用nginx缓冲
         }
     )
 

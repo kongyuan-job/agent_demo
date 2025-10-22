@@ -7,6 +7,7 @@
 - **可视化Agent配置**: 通过直观的界面配置Agent的基础信息、提示词、输入输出格式
 - **动态输入输出**: 支持字符串、对象、数组等多种输入输出类型，灵活处理结构化数据
 - **动态工具集成**: 支持知识库搜索、计算器、网络搜索、API调用等多种工具
+- **流式输出**: 实时观察Agent执行过程，包括LLM思考和工具调用
 - **实时测试**: 内置聊天界面，可以实时测试Agent的响应效果，支持多种输入类型
 - **工作流设计**: 基于LangGraph的工作流引擎，支持复杂的对话流程
 - **RESTful API**: 完整的API接口，支持Agent的CRUD操作和在线调用
@@ -61,6 +62,8 @@ python start.py
 
 服务启动后访问：
 - 前端界面: http://localhost:8000/static/index.html
+- 流式测试: http://localhost:8000/static/stream_test.html
+- 可观测性: http://localhost:8000/static/observability.html
 - API文档: http://localhost:8000/docs
 
 ## 📖 使用指南
@@ -119,7 +122,9 @@ print(response.json())
 ### 对话接口
 
 - `POST /api/chat` - 与Agent对话
-- `POST /api/chat/stream` - 流式对话
+- `POST /api/chat/stream` - 流式对话（Server-Sent Events）
+
+详细的流式输出文档请查看 [STREAMING.md](STREAMING.md)
 
 ### 配置接口
 
@@ -176,6 +181,12 @@ python test_complete.py
 
 # 可观测性功能测试  
 python test_observability.py
+
+# 流式输出功能测试
+python test_streaming.py
+
+# 时间线功能测试
+python test_timeline.py
 ```
 
 ### 测试内容
