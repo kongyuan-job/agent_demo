@@ -2,6 +2,18 @@
 
 一个基于LangGraph的动态AI Agent创建和管理平台，支持通过可视化界面配置Agent的核心定义、能力配置、测试验证和部署集成。
 
+## 🎉 Recent Updates
+
+**v2.0 - Code Architecture Optimization** (2025-10-22)
+- ✅ Refactored monolithic code into modular architecture
+- ✅ main.py reduced from 401 → 49 lines (-88%)
+- ✅ agent_factory.py reduced from 853 → 578 lines (-32%)
+- ✅ Created 19 focused modules with clear responsibilities
+- ✅ Improved testability, maintainability, and scalability
+- ✅ 100% backward compatible - no breaking changes!
+
+📚 **See [REFACTORING_COMPLETE.md](docs/REFACTORING_COMPLETE.md) for details**
+
 ## 🌟 功能特性
 
 - **可视化Agent配置**: 通过直观的界面配置Agent的基础信息、提示词、输入输出格式
@@ -132,45 +144,150 @@ print(response.json())
 - `GET /api/parameter-types` - 获取参数类型
 - `GET /api/presets` - 获取预设配置
 
-## 🏗️ 系统架构
+## 🏗️ System Architecture
+
+### High-Level Overview
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   前端界面      │    │   FastAPI服务   │    │  LangGraph引擎  │
-│   (Vue.js)      │◄──►│   (Python)      │◄──►│   (动态创建)    │
+│   Frontend      │    │   FastAPI       │    │  LangGraph      │
+│   (Vue.js)      │◄──►│   (Python)      │◄──►│   (Workflow)    │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
                               │
                               ▼
                        ┌─────────────────┐
-                       │   工具插件      │
-                       │  (知识库/API)   │
+                       │   Tool Plugins  │
+                       │  (KB/API/etc)   │
                        └─────────────────┘
 ```
 
+### Modular Architecture (v2.0)
+
+The system follows a clean, modular architecture with clear separation of concerns:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                         API Layer                             │
+│  ┌─────────┐ ┌────────┐ ┌──────────────┐ ┌──────────────┐  │
+│  │ Agents  │ │  Chat  │ │Observability │ │    Utils     │  │
+│  │ Router  │ │ Router │ │   Router     │ │   Router     │  │
+│  └─────────┘ └────────┘ └──────────────┘ └──────────────┘  │
+└──────────────────────────────────────────────────────────────┘
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│                      Core Business Layer                      │
+│  ┌──────────────────┐           ┌─────────────────────────┐ │
+│  │  Agent Manager   │           │   Agent Executor        │ │
+│  │  (Lifecycle)     │           │   (LangGraph Workflow)  │ │
+│  └──────────────────┘           └─────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│                        Tool Layer                             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐  │
+│  │Calculator│ │WebSearch │ │Knowledge │ │   API Call   │  │
+│  │   Tool   │ │   Tool   │ │Base Tool │ │     Tool     │  │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────┘  │
+│                    Tool Factory (Registry)                    │
+└──────────────────────────────────────────────────────────────┘
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│                      Storage Layer                            │
+│          ┌────────────────┐      ┌──────────────┐           │
+│          │  Agent Storage │      │Observability │           │
+│          │  (JSON/DB)     │      │     DB       │           │
+│          └────────────────┘      └──────────────┘           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Key Features**:
+- **Modular Design**: Each layer has clear responsibilities
+- **Factory Pattern**: Extensible tool system
+- **Repository Pattern**: Swappable storage backends
+- **Router Pattern**: Organized API endpoints
+- **Dependency Injection**: Loose coupling between components
+
+📚 **For detailed architecture documentation, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
+
 ## 🛠️ 开发说明
 
-### 项目结构
+### Project Structure
 
 ```
 palantir_agent/
-├── main.py              # FastAPI主应用
-├── models.py            # 数据模型定义
-├── agent_factory.py     # Agent创建工厂
-├── config.py            # 配置管理
-├── start.py             # 启动脚本
-├── requirements.txt     # 依赖列表
-├── static/              # 前端静态文件
-│   ├── index.html       # 主页面
-│   └── app.js          # Vue.js应用
-└── README.md           # 说明文档
+├── main.py                    # Application entry point (49 lines)
+├── agent_factory.py           # Agent execution engine
+├── models.py                  # Pydantic data models
+├── config.py                  # Configuration management
+├── observability.py           # Observability system
+│
+├── api/                       # API Layer
+│   └── routes/
+│       ├── agents.py          # Agent CRUD endpoints
+│       ├── chat.py            # Chat endpoints  
+│       ├── observability.py   # Metrics & monitoring
+│       └── utils.py           # Utility endpoints
+│
+├── core/                      # Business Logic Layer
+│   └── agent_manager.py       # Agent lifecycle management
+│
+├── tools/                     # Tool System
+│   ├── base.py                # Abstract base class
+│   ├── calculator.py          # Calculator tool
+│   ├── web_search.py          # Web search tool
+│   ├── knowledge_base.py      # Knowledge base tool
+│   ├── api_call.py            # API call tool
+│   └── tool_factory.py        # Tool factory
+│
+├── utils/                     # Utilities
+│   └── formatters.py          # Prompt formatting
+│
+├── storage/                   # Storage Layer
+│   └── agent_storage.py       # Persistence (JSON/DB)
+│
+├── static/                    # Frontend
+│   ├── index.html             # Main UI
+│   ├── stream_test.html       # Streaming test
+│   └── observability.html     # Monitoring UI
+│
+├── docs/                      # Documentation
+│   ├── ARCHITECTURE.md        # Architecture details
+│   ├── DEVELOPER_GUIDE.md     # Development guide
+│   ├── OPTIMIZATION_SUMMARY.md # Refactoring summary
+│   └── MIGRATION_CHECKLIST.md # Migration tracking
+│
+└── tests/                     # Test suite
+    ├── test_complete.py
+    ├── test_observability.py
+    └── test_streaming.py
 ```
 
-### 核心组件
+### Core Components
 
-1. **AgentFactory**: 负责动态创建和管理LangGraph Agent
-2. **FastAPI服务**: 提供RESTful API接口
-3. **Vue.js前端**: 提供可视化配置界面
-4. **工具系统**: 支持多种工具类型的集成
+1. **API Layer** (`api/routes/`): HTTP request/response handling
+   - `agents.py`: Agent CRUD operations
+   - `chat.py`: Regular and streaming chat
+   - `observability.py`: Metrics and monitoring
+   - `utils.py`: Tool types and presets
+
+2. **Business Logic** (`core/`): Agent management
+   - `agent_manager.py`: Agent lifecycle (create, update, delete)
+
+3. **Tool System** (`tools/`): Extensible tool framework
+   - `base.py`: Abstract base class for all tools
+   - Individual tool implementations (calculator, web search, etc.)
+   - `tool_factory.py`: Factory pattern for tool creation
+
+4. **Storage Layer** (`storage/`): Data persistence
+   - `agent_storage.py`: JSON/Database storage abstraction
+
+5. **Execution Engine** (`agent_factory.py`): LangGraph workflow orchestration
+
+6. **Frontend** (`static/`): Vue.js UI for configuration and testing
+
+7. **Observability** (`observability.py`): Metrics, logging, and monitoring
+
+📚 **For detailed developer documentation, see [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)**
 
 ## 🧪 测试系统
 
