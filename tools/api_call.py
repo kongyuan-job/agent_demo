@@ -5,7 +5,6 @@ API call tool implementation
 from typing import Dict, Any
 from pydantic import BaseModel, Field, create_model
 from langchain_core.tools import Tool as LangChainTool
-from models import Tool as ToolConfig, ParameterType
 from .base import BaseTool
 import httpx
 
@@ -14,7 +13,7 @@ class APICallTool(BaseTool):
     """API call tool for external API integration"""
     
     @classmethod
-    def from_config(cls, tool_config: ToolConfig) -> LangChainTool:
+    def from_config(cls, tool_config) -> LangChainTool:
         """Create API call tool from configuration"""
         # Create dynamic input schema based on parameters
         input_schema = cls._create_input_schema(tool_config)
@@ -48,28 +47,31 @@ class APICallTool(BaseTool):
         return DefaultAPIInput
     
     @staticmethod
-    def _create_input_schema(tool_config: ToolConfig) -> type[BaseModel]:
-        """Create dynamic input schema from tool parameters"""
-        if not tool_config.parameters:
+    def _create_input_schema(tool_config) -> type[BaseModel]:
+        """从工具参数创建动态输入模式"""
+        # 如果没有参数，返回默认schema
+        if not hasattr(tool_config, 'parameters') or not tool_config.parameters:
             return APICallTool.get_input_schema()
         
-        # Build fields dictionary for dynamic model
+        # 为动态模型构建字段字典
         fields = {}
         for param in tool_config.parameters:
             field_type = str
-            if param.type == ParameterType.INTEGER:
+            # 简单处理，不依赖ParameterType enum
+            param_type = getattr(param, 'type', 'string')
+            if param_type in ('integer', 'Integer'):
                 field_type = int
-            elif param.type == ParameterType.FLOAT:
+            elif param_type in ('float', 'Float'):
                 field_type = float
-            elif param.type == ParameterType.BOOLEAN:
+            elif param_type in ('boolean', 'Boolean'):
                 field_type = bool
             
-            if param.required:
-                fields[param.name] = (field_type, Field(description=param.description))
+            if getattr(param, 'required', False):
+                fields[param.name] = (field_type, Field(description=getattr(param, 'description', '')))
             else:
                 fields[param.name] = (
                     field_type,
-                    Field(default=param.default_value, description=param.description)
+                    Field(default=getattr(param, 'default_value', None), description=getattr(param, 'description', ''))
                 )
         
         return create_model('APICallInput', **fields)

@@ -4,7 +4,6 @@ Web search tool implementation
 
 from pydantic import BaseModel, Field
 from langchain_core.tools import Tool as LangChainTool
-from models import Tool as ToolConfig
 from .base import BaseTool
 
 
@@ -17,7 +16,7 @@ class WebSearchTool(BaseTool):
     """Web search tool"""
     
     @classmethod
-    def from_config(cls, tool_config: ToolConfig) -> LangChainTool:
+    def from_config(cls, tool_config) -> LangChainTool:
         """Create web search tool from configuration"""
         async def web_search_func(query: str) -> str:
             return await cls.execute(query=query)

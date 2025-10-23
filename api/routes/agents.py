@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 from datetime import datetime
 import uuid
 
-from models import AgentConfig, AgentResponse, ToolType
+from models import AgentConfig, AgentResponse
 from agent_factory import agent_factory
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
@@ -19,13 +19,10 @@ async def create_agent(config: AgentConfig):
         if not config.id:
             config.id = str(uuid.uuid4())
         
-        # Generate IDs for tools (if missing)
+        # 为工具生成ID（如果缺失）
         for tool in config.tools:
-            if not tool.id:
-                tool.id = str(uuid.uuid4())
-            # Ensure type is set correctly
-            if isinstance(tool.type, str):
-                tool.type = ToolType(tool.type)
+            if isinstance(tool, dict) and ('id' not in tool or not tool.get('id')):
+                tool['id'] = str(uuid.uuid4())
         
         config.created_at = datetime.now().isoformat()
         config.updated_at = datetime.now().isoformat()
@@ -38,7 +35,7 @@ async def create_agent(config: AgentConfig):
             message="Agent创建成功",
             data={
                 "agent_id": agent_id,
-                "config": config.dict()
+                "config": config.model_dump()
             }
         )
     except Exception as e:
@@ -64,7 +61,7 @@ async def get_agent(agent_id: str):
         config = agent_factory.get_agent_config(agent_id)
         if not config:
             raise HTTPException(status_code=404, detail="Agent不存在")
-        return config.dict()
+        return config.model_dump()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取Agent配置失败: {str(e)}")
 
@@ -76,10 +73,10 @@ async def update_agent(agent_id: str, config: AgentConfig):
         config.id = agent_id
         config.updated_at = datetime.now().isoformat()
         
-        # Generate IDs for tools (if missing)
+        # 为工具生成ID（如果缺失）
         for tool in config.tools:
-            if not tool.id:
-                tool.id = str(uuid.uuid4())
+            if isinstance(tool, dict) and ('id' not in tool or not tool.get('id')):
+                tool['id'] = str(uuid.uuid4())
         
         # Recreate Agent
         new_agent_id = await agent_factory.create_agent(config)
@@ -89,7 +86,7 @@ async def update_agent(agent_id: str, config: AgentConfig):
             message="Agent更新成功",
             data={
                 "agent_id": new_agent_id,
-                "config": config.dict()
+                "config": config.model_dump()
             }
         )
     except Exception as e:

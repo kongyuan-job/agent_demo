@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent 编辑器 - Palantir AI Agent System</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue/dist/index.iife.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f7fa;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .editor-container {
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        .section-card {
+            margin-bottom: 20px;
+        }
+        .param-item {
+            border: 1px solid #e4e7ed;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            background: #fafafa;
+            transition: all 0.3s;
+        }
+        .param-item:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .tool-item {
+            border: 1px solid #e4e7ed;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            background: #f0f9ff;
+        }
+        .ref-object-item {
+            border: 1px solid #dcdfe6;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 8px;
+            background: #f5f7fa;
+        }
+        .json-preview {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <el-container>
+            <!-- 头部 -->
+            <el-header class="header">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h1 style="margin: 0; font-size: 24px;">
+                            <el-icon><Edit /></el-icon>
+                            Agent 配置编辑器
+                        </h1>
+                        <p style="margin: 5px 0 0 0; opacity: 0.9;">智能Agent配置可视化编辑</p>
+                    </div>
+                    <div>
+                        <el-button @click="goBack">
+                            <el-icon><Back /></el-icon>
+                            返回列表
+                        </el-button>
+                        <el-button type="primary" @click="previewJSON">
+                            <el-icon><View /></el-icon>
+                            预览JSON
+                        </el-button>
+                        <el-button type="success" @click="saveAgent" :loading="saving">
+                            <el-icon><Check /></el-icon>
+                            保存
+                        </el-button>
+                    </div>
+                </div>
+            </el-header>
+
+            <!-- 主内容 -->
+            <el-main class="editor-container">
+                <el-form :model="agentForm" label-width="140px" ref="agentFormRef">
+                    <!-- 1. 基础信息 -->
+                    <el-card class="section-card">
+                        <template #header>
+                            <div style="font-weight: bold; font-size: 16px;">
+                                <el-icon><InfoFilled /></el-icon>
+                                基础信息
+                            </div>
+                        </template>
+                        <el-form-item label="Agent名称" required>
+                            <el-input v-model="agentForm.name" placeholder="请输入Agent名称"></el-input>
+                        </el-form-item>
+                        <el-form-item label="Agent描述" required>
+                            <el-input v-model="agentForm.description" type="textarea" :rows="2" placeholder="描述Agent的用途"></el-input>
+                        </el-form-item>
+                    </el-card>
+
+                    <!-- 2. 输入参数 -->
+                    <el-card class="section-card">
+                        <template #header>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="font-weight: bold; font-size: 16px;">
+                                    <el-icon><Download /></el-icon>
+                                    输入参数 (可选)
+                                </div>
+                                <el-button size="small" type="primary" @click="addInputParam">
+                                    <el-icon><Plus /></el-icon>
+                                    添加参数
+                                </el-button>
+                            </div>
+                        </template>
+                        <div v-if="Object.keys(agentForm.input).length === 0" style="text-align: center; color: #999; padding: 20px;">
+                            暂无输入参数，点击上方按钮添加
+                        </div>
+                        <div v-for="(param, key) in agentForm.input" :key="key" class="param-item">
+                            <el-row :gutter="12">
+                                <el-col :span="5">
+                                    <el-input v-model="agentForm.input[key]._name" @blur="updateInputParamKey(key)" placeholder="参数名">
+                                        <template #prepend>名称</template>
+                                    </el-input>
+                                </el-col>
+                                <el-col :span="4">
+                                    <el-select v-model="param.type" placeholder="类型">
+                                        <el-option label="String" value="String"></el-option>
+                                        <el-option label="Integer" value="Integer"></el-option>
+                                        <el-option label="Float" value="Float"></el-option>
+                                        <el-option label="Boolean" value="Boolean"></el-option>
+                                        <el-option label="Object" value="Object"></el-option>
+                                        <el-option label="Array" value="Array"></el-option>
+                                    </el-select>
+                                </el-col>
+                                <el-col :span="5">
+                                    <el-input v-model="param.value" placeholder="默认值"></el-input>
+                                </el-col>
+                                <el-col :span="7">
+                                    <el-input v-model="param.description" placeholder="参数描述"></el-input>
+                                </el-col>
+                                <el-col :span="3">
+                                    <el-button type="danger" @click="removeInputParam(key)">删除</el-button>
+                                </el-col>
+                            </el-row>
+                        </div>
+                    </el-card>
+
+                    <!-- 3. 工具配置 -->
+                    <el-card class="section-card">
+                        <template #header>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="font-weight: bold; font-size: 16px;">
+                                    <el-icon><Tools /></el-icon>
+                                    工具配置 (可选)
+                                </div>
+                                <el-dropdown @command="handleAddTool">
+                                    <el-button type="primary" size="small">
+                                        <el-icon><Plus /></el-icon>
+                                        添加工具<el-icon class="el-icon--right"><arrow-down /></el-icon>
+                                    </el-button>
+                                    <template #dropdown>
+                                        <el-dropdown-menu>
+                                            <el-dropdown-item command="system_function">系统工具</el-dropdown-item>
+                                            <el-dropdown-item command="call_function">自定义工具</el-dropdown-item>
+                                            <el-dropdown-item command="query_objects">本体工具(图数据库)</el-dropdown-item>
+                                        </el-dropdown-menu>
+                                    </template>
+                                </el-dropdown>
+                            </div>
+                        </template>
+                        <div v-if="agentForm.tools.length === 0" style="text-align: center; color: #999; padding: 20px;">
+                            暂无工具，点击上方按钮添加
+                        </div>
+                        <div v-for="(tool, index) in agentForm.tools" :key="index" class="tool-item">
+                            <!-- 系统工具 -->
+                            <div v-if="tool.type === 'system_function'">
+                                <el-row :gutter="12" align="middle">
+                                    <el-col :span="4">
+                                        <el-tag type="success">系统工具</el-tag>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <el-select v-model="tool.name" placeholder="选择系统工具">
+                                            <el-option label="计算器 (calculator)" value="calculator"></el-option>
+                                            <el-option label="网络搜索 (web_search)" value="web_search"></el-option>
+                                            <el-option label="知识库 (knowledge_base)" value="knowledge_base"></el-option>
+                                        </el-select>
+                                    </el-col>
+                                    <el-col :span="10">
+                                        <el-input v-model="tool.description" placeholder="工具描述(可选)"></el-input>
+                                    </el-col>
+                                    <el-col :span="2">
+                                        <el-button type="danger" @click="removeTool(index)">删除</el-button>
+                                    </el-col>
+                                </el-row>
+                            </div>
+
+                            <!-- 自定义工具 -->
+                            <div v-if="tool.type === 'call_function'">
+                                <el-row :gutter="12" align="middle">
+                                    <el-col :span="4">
+                                        <el-tag type="warning">自定义工具</el-tag>
+                                    </el-col>
+                                    <el-col :span="6">
+                                        <el-input v-model="tool.name" placeholder="函数名称"></el-input>
+                                    </el-col>
+                                    <el-col :span="4">
+                                        <el-select v-model="tool.function_type" placeholder="函数类型">
+                                            <el-option label="API" value="api"></el-option>
+                                            <el-option label="Lambda" value="lambda"></el-option>
+                                            <el-option label="Custom" value="custom"></el-option>
+                                        </el-select>
+                                    </el-col>
+                                    <el-col :span="8">
+                                        <el-input v-model="tool.description" placeholder="工具描述(可选)"></el-input>
+                                    </el-col>
+                                    <el-col :span="2">
+                                        <el-button type="danger" @click="removeTool(index)">删除</el-button>
+                                    </el-col>
+                                </el-row>
+                                <el-divider style="margin: 12px 0;"></el-divider>
+                                <el-form-item label="配置" label-width="80px">
+                                    <el-input v-model="tool.config" type="textarea" :rows="2" placeholder='{"url": "https://api.example.com", "method": "POST"}'></el-input>
+                                </el-form-item>
+                            </div>
+
+                            <!-- 图数据库工具 -->
+                            <div v-if="tool.type === 'query_objects'">
+                                <el-row :gutter="12" align="middle">
+                                    <el-col :span="4">
+                                        <el-tag type="info">图数据库</el-tag>
+                                    </el-col>
+                                    <el-col :span="18">
+                                        <el-input v-model="tool.description" placeholder="工具描述(可选)"></el-input>
+                                    </el-col>
+                                    <el-col :span="2">
+                                        <el-button type="danger" @click="removeTool(index)">删除</el-button>
+                                    </el-col>
+                                </el-row>
+                                <el-divider style="margin: 12px 0;"></el-divider>
+                                <div style="padding-left: 20px;">
+                                    <div style="margin-bottom: 8px; display: flex; justify-content: space-between;">
+                                        <span style="font-weight: bold;">查询对象列表</span>
+                                        <el-button size="small" @click="addQueryObject(index)">添加对象</el-button>
+                                    </div>
+                                    <div v-for="(obj, objIdx) in tool.objects" :key="objIdx" style="border: 1px solid #ddd; padding: 12px; margin-bottom: 8px; border-radius: 4px; background: white;">
+                                        <el-row :gutter="12">
+                                            <el-col :span="10">
+                                                <el-input v-model="obj.object_code" placeholder="对象编码" size="small"></el-input>
+                                            </el-col>
+                                            <el-col :span="12">
+                                                <el-input v-model="obj.object_description" placeholder="对象描述" size="small"></el-input>
+                                            </el-col>
+                                            <el-col :span="2">
+                                                <el-button size="small" type="danger" @click="removeQueryObject(index, objIdx)">删除</el-button>
+                                            </el-col>
+                                        </el-row>
+                                        <div style="margin-top: 8px; margin-left: 12px;">
+                                            <div style="margin-bottom: 4px; font-size: 12px; color: #666;">字段列表</div>
+                                            <div v-for="(field, fieldIdx) in obj.fields" :key="fieldIdx" style="margin-bottom: 4px;">
+                                                <el-row :gutter="8">
+                                                    <el-col :span="11">
+                                                        <el-input v-model="field.field_name" placeholder="字段名" size="small"></el-input>
+                                                    </el-col>
+                                                    <el-col :span="11">
+                                                        <el-input v-model="field.field_description" placeholder="字段描述" size="small"></el-input>
+                                                    </el-col>
+                                                    <el-col :span="2">
+                                                        <el-button size="small" type="danger" @click="removeObjectField(index, objIdx, fieldIdx)">删除</el-button>
+                                                    </el-col>
+                                                </el-row>
+                                            </div>
+                                            <el-button size="small" @click="addObjectField(index, objIdx)">添加字段</el-button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </el-card>
+
+                    <!-- 4. 系统提示词 -->
+                    <el-card class="section-card">
+                        <template #header>
+                            <div style="font-weight: bold; font-size: 16px;">
+                                <el-icon><Document /></el-icon>
+                                系统提示词 (必填)
+                            </div>
+                        </template>
+                        <el-form-item label="提示词内容" required>
+                            <el-input v-model="agentForm.system_prompt.value" type="textarea" :rows="4" placeholder="定义Agent的角色、能力和行为准则"></el-input>
+                        </el-form-item>
+                        <el-form-item label="引用对象">
+                            <el-button size="small" @click="addRefObject('system')">
+                                <el-icon><Plus /></el-icon>
+                                添加引用
+                            </el-button>
+                            <div v-for="(ref, index) in agentForm.system_prompt.ref_objects" :key="index" class="ref-object-item" style="margin-top: 8px;">
+                                <el-row :gutter="12">
+                                    <el-col :span="3">
+                                        <el-input-number v-model="ref.id" :min="1" size="small" style="width: 100%;"></el-input-number>
+                                    </el-col>
+                                    <el-col :span="5">
+                                        <el-select v-model="ref.type" size="small" placeholder="引用类型">
+                                            <el-option label="输入参数" value="input_type"></el-option>
+                                            <el-option label="工具结果" value="tool_result"></el-option>
+                                            <el-option label="变量" value="variable"></el-option>
+                                        </el-select>
+                                    </el-col>
+                                    <el-col :span="5">
+                                        <el-input v-model="ref.name" placeholder="引用名称" size="small"></el-input>
+                                    </el-col>
+                                    <el-col :span="5">
+                                        <el-input v-model="ref.value" placeholder="引用值(可选)" size="small"></el-input>
+                                    </el-col>
+                                    <el-col :span="4">
+                                        <el-input v-model="ref.tag" placeholder="标签" size="small"></el-input>
+                                    </el-col>
+                                    <el-col :span="2">
+                                        <el-button size="small" type="danger" @click="removeRefObject('system', index)">删除</el-button>
+                                    </el-col>
+                                </el-row>
+                            </div>
+                        </el-form-item>
+                    </el-card>
+
+                    <!-- 5. 任务提示词 -->
+                    <el-card class="section-card">
+                        <template #header>
+                            <div style="font-weight: bold; font-size: 16px;">
+                                <el-icon><Tickets /></el-icon>
+                                任务提示词 (必填)
+                            </div>
+                        </template>
+                        <el-form-item label="提示词内容" required>
+                            <el-input v-model="agentForm.task_prompt.value" type="textarea" :rows="6" placeholder="定义Agent需要完成的具体任务"></el-input>
+                        </el-form-item>
+                        <el-form-item label="引用对象">
+                            <el-button size="small" @click="addRefObject('task')">
+                                <el-icon><Plus /></el-icon>
+                                添加引用
+                            </el-button>
+                            <div v-for="(ref, index) in agentForm.task_prompt.ref_objects" :key="index" class="ref-object-item" style="margin-top: 8px;">
+                                <el-row :gutter="12">
+                                    <el-col :span="3">
+                                        <el-input-number v-model="ref.id" :min="1" size="small" style="width: 100%;"></el-input-number>
+                                    </el-col>
+                                    <el-col :span="5">
+                                        <el-select v-model="ref.type" size="small" placeholder="引用类型">
+                                            <el-option label="输入参数" value="input_type"></el-option>
+                                            <el-option label="工具结果" value="tool_result"></el-option>
+                                            <el-option label="变量" value="variable"></el-option>
+                                        </el-select>
+                                    </el-col>
+                                    <el-col :span="5">
+                                        <el-input v-model="ref.name" placeholder="引用名称" size="small"></el-input>
+                                    </el-col>
+                                    <el-col :span="5">
+                                        <el-input v-model="ref.value" placeholder="引用值(可选)" size="small"></el-input>
+                                    </el-col>
+                                    <el-col :span="4">
+                                        <el-input v-model="ref.tag" placeholder="标签" size="small"></el-input>
+                                    </el-col>
+                                    <el-col :span="2">
+                                        <el-button size="small" type="danger" @click="removeRefObject('task', index)">删除</el-button>
+                                    </el-col>
+                                </el-row>
+                            </div>
+                        </el-form-item>
+                    </el-card>
+
+                    <!-- 6. 输出参数 -->
+                    <el-card class="section-card">
+                        <template #header>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="font-weight: bold; font-size: 16px;">
+                                    <el-icon><Upload /></el-icon>
+                                    输出参数 (必填)
+                                </div>
+                                <el-button size="small" type="primary" @click="addOutputParam">
+                                    <el-icon><Plus /></el-icon>
+                                    添加参数
+                                </el-button>
+                            </div>
+                        </template>
+                        <div v-if="Object.keys(agentForm.output).length === 0" style="text-align: center; color: #999; padding: 20px;">
+                            暂无输出参数，点击上方按钮添加
+                        </div>
+                        <div v-for="(param, key) in agentForm.output" :key="key" class="param-item">
+                            <el-row :gutter="12">
+                                <el-col :span="5">
+                                    <el-input v-model="agentForm.output[key]._name" @blur="updateOutputParamKey(key)" placeholder="参数名">
+                                        <template #prepend>名称</template>
+                                    </el-input>
+                                </el-col>
+                                <el-col :span="4">
+                                    <el-select v-model="param.variable_meta_type" placeholder="元类型">
+                                        <el-option label="String" value="String"></el-option>
+                                        <el-option label="Integer" value="Integer"></el-option>
+                                        <el-option label="Float" value="Float"></el-option>
+                                        <el-option label="Boolean" value="Boolean"></el-option>
+                                        <el-option label="Object" value="Object"></el-option>
+                                        <el-option label="Array" value="Array"></el-option>
+                                    </el-select>
+                                </el-col>
+                                <el-col :span="4">
+                                    <el-input v-model="param.variable_type" placeholder="具体类型(可选)"></el-input>
+                                </el-col>
+                                <el-col :span="8">
+                                    <el-input v-model="param.variable_desc" placeholder="变量描述"></el-input>
+                                </el-col>
+                                <el-col :span="3">
+                                    <el-button type="danger" @click="removeOutputParam(key)">删除</el-button>
+                                </el-col>
+                            </el-row>
+                        </div>
+                    </el-card>
+
+                    <!-- 7. LLM配置 -->
+                    <el-card class="section-card">
+                        <template #header>
+                            <div style="font-weight: bold; font-size: 16px;">
+                                <el-icon><Cpu /></el-icon>
+                                大模型配置 (必填)
+                            </div>
+                        </template>
+                        <el-row :gutter="20">
+                            <el-col :span="12">
+                                <el-form-item label="模型名称" required>
+                                    <el-select v-model="agentForm.llm.name" placeholder="选择大模型" filterable>
+                                        <el-option label="DeepSeek Chat" value="deepseek-chat"></el-option>
+                                        <el-option label="GPT-4" value="gpt-4"></el-option>
+                                        <el-option label="GPT-3.5 Turbo" value="gpt-3.5-turbo"></el-option>
+                                        <el-option label="Claude 3 Opus" value="claude-3-opus"></el-option>
+                                        <el-option label="Claude 3 Sonnet" value="claude-3-sonnet"></el-option>
+                                        <el-option label="Gemini Pro" value="gemini-pro"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="模型ID">
+                                    <el-input v-model="agentForm.llm.id" placeholder="自动生成" disabled></el-input>
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+                        <el-row :gutter="20">
+                            <el-col :span="12">
+                                <el-form-item label="温度值 (Temperature)">
+                                    <el-slider v-model="agentForm.llm.temperature" :min="0" :max="2" :step="0.1" show-input></el-slider>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="最大Token数">
+                                    <el-input-number v-model="agentForm.llm.max_tokens" :min="1" :max="8000" style="width: 100%;"></el-input-number>
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+                        <el-row :gutter="20">
+                            <el-col :span="12">
+                                <el-form-item label="API Base (可选)">
+                                    <el-input v-model="agentForm.llm.api_base" placeholder="https://api.example.com"></el-input>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="API Key (可选)">
+                                    <el-input v-model="agentForm.llm.api_key" type="password" placeholder="sk-..."></el-input>
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+                    </el-card>
+                </el-form>
+            </el-main>
+        </el-container>
+
+        <!-- JSON预览对话框 -->
+        <el-dialog v-model="showJSONPreview" title="JSON配置预览" width="60%">
+            <pre class="json-preview">{{ jsonPreviewContent }}</pre>
+            <template #footer>
+                <el-button @click="copyJSON">复制JSON</el-button>
+                <el-button type="primary" @click="showJSONPreview = false">关闭</el-button>
+            </template>
+        </el-dialog>
+    </div>
+
+    <script src="agent_editor.js"></script>
+</body>
+</html>

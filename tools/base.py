@@ -6,7 +6,6 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict
 from pydantic import BaseModel
 from langchain_core.tools import Tool as LangChainTool
-from models import Tool as ToolConfig
 
 
 class BaseTool(ABC):
@@ -14,7 +13,7 @@ class BaseTool(ABC):
     
     @classmethod
     @abstractmethod
-    def from_config(cls, tool_config: ToolConfig) -> LangChainTool:
+    def from_config(cls, tool_config) -> LangChainTool:
         """Create a LangChain tool from configuration"""
         pass
     

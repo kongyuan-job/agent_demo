@@ -106,6 +106,12 @@ const app = createApp({
         
         // 创建新Agent
         createAgent() {
+            // 使用新的编辑器页面
+            window.location.href = '/static/agent_editor.html';
+        },
+        
+        // 使用旧的创建方式
+        createAgentLegacy() {
             this.editingAgent = null;
             this.resetForm();
             this.showCreateDialog = true;
@@ -113,6 +119,12 @@ const app = createApp({
         
         // 编辑Agent
         async editAgent(agent) {
+            // 使用新的编辑器页面
+            window.location.href = `/static/agent_editor.html?id=${agent.id}`;
+        },
+        
+        // 使用旧的编辑方式
+        async editAgentLegacy(agent) {
             try {
                 const response = await fetch(`/api/agents/${agent.id}`);
                 const config = await response.json();

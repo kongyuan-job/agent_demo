@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 import uuid
 
-from models import ToolType, ParameterType
+from models import ToolType
 
 router = APIRouter(prefix="/api", tags=["utils"])
 
@@ -19,10 +19,14 @@ async def get_tool_types():
 
 @router.get("/parameter-types")
 async def get_parameter_types():
-    """Get available parameter types"""
+    """获取可用的参数类型"""
     return [
-        {"value": param_type.value, "label": param_type.value}
-        for param_type in ParameterType
+        {"value": "String", "label": "String"},
+        {"value": "Integer", "label": "Integer"},
+        {"value": "Float", "label": "Float"},
+        {"value": "Boolean", "label": "Boolean"},
+        {"value": "Object", "label": "Object"},
+        {"value": "Array", "label": "Array"},
     ]
 
 

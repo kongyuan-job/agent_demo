@@ -25,16 +25,18 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         .main-content {
-            padding: 20px;
-            max-width: 1200px;
+            padding: 30px 40px;
+            max-width: 1600px;
             margin: 0 auto;
         }
         .agent-card {
-            margin-bottom: 20px;
-            transition: transform 0.2s;
+            margin-bottom: 24px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
         }
         .agent-card:hover {
-            transform: translateY(-2px);
+            transform: translateY(-4px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
         .config-form {
             background: white;
@@ -131,8 +133,8 @@
             <!-- 主内容区 -->
             <el-main class="main-content">
                 <!-- 概览统计 -->
-                <el-row :gutter="20" style="margin-bottom: 20px;">
-                    <el-col :span="6">
+                <el-row :gutter="24" style="margin-bottom: 30px;">
+                    <el-col :xs="24" :sm="12" :md="6" :lg="6">
                         <el-card>
                             <div style="text-align: center;">
                                 <div style="font-size: 32px; color: #409eff; margin-bottom: 8px;">
@@ -142,7 +144,7 @@
                             </div>
                         </el-card>
                     </el-col>
-                    <el-col :span="6">
+                    <el-col :xs="24" :sm="12" :md="6" :lg="6">
                         <el-card>
                             <div style="text-align: center;">
                                 <div style="font-size: 32px; color: #67c23a; margin-bottom: 8px;">
@@ -152,7 +154,7 @@
                             </div>
                         </el-card>
                     </el-col>
-                    <el-col :span="6">
+                    <el-col :xs="24" :sm="12" :md="6" :lg="6">
                         <el-card>
                             <div style="text-align: center;">
                                 <div style="font-size: 32px; color: #e6a23c; margin-bottom: 8px;">
@@ -162,7 +164,7 @@
                             </div>
                         </el-card>
                     </el-col>
-                    <el-col :span="6">
+                    <el-col :xs="24" :sm="12" :md="6" :lg="6">
                         <el-card>
                             <div style="text-align: center;">
                                 <div style="font-size: 32px; color: #f56c6c; margin-bottom: 8px;">
@@ -192,8 +194,8 @@
                         </div>
                     </template>
 
-                    <el-row :gutter="20">
-                        <el-col :span="8" v-for="agent in filteredAgents" :key="agent.id">
+                    <el-row :gutter="24">
+                        <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="agent in filteredAgents" :key="agent.id">
                             <el-card class="agent-card" @click="selectAgent(agent)">
                                 <div style="display: flex; justify-content: space-between; align-items: start;">
                                     <div style="flex: 1;">

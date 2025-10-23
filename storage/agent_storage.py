@@ -31,7 +31,7 @@ class AgentStorage:
             config: Agent configuration to save
         """
         agents = self.load_all_agents()
-        agents[agent_id] = config.dict()
+        agents[agent_id] = config.model_dump()
         self.storage_file.write_text(
             json.dumps(agents, ensure_ascii=False, indent=2),
             encoding='utf-8'
@@ -91,7 +91,6 @@ class AgentStorage:
         result = []
         for agent_id, data in agents.items():
             # Handle both old and new storage formats
-            # Old format: {id, config: {...}, created_at}
             # New format: {name, description, ...} (direct config fields)
             if "config" in data and isinstance(data["config"], dict):
                 # Old format - extract config and add id

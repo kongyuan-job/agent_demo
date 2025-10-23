@@ -4,7 +4,6 @@ Calculator tool implementation
 
 from pydantic import BaseModel, Field
 from langchain_core.tools import Tool as LangChainTool
-from models import Tool as ToolConfig
 from .base import BaseTool
 
 
@@ -19,8 +18,8 @@ class CalculatorTool(BaseTool):
     """Calculator tool for mathematical expressions"""
     
     @classmethod
-    def from_config(cls, tool_config: ToolConfig) -> LangChainTool:
-        """Create calculator tool from configuration"""
+    def from_config(cls, tool_config) -> LangChainTool:
+        """从配置创建计算器工具"""
         return LangChainTool(
             name=tool_config.name,
             description=tool_config.description or "用于计算数学表达式",

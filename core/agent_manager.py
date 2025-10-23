@@ -78,7 +78,7 @@ class AgentManager:
         return [
             {
                 "id": agent_id,
-                **config.dict()
+                **config.model_dump()
             }
             for agent_id, config in self._agents.items()
         ]

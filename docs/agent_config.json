@@ -1,0 +1,65 @@
+{
+  "input": {
+    "cpart_code": {
+      "type": "String",
+      "value": "c00001"
+    }
+  },
+  "tools": [
+    {
+      "type": "query_objects",
+      "objects": [
+        {
+          "object_code": "",
+          "object_description": "",
+          "fields": [
+            {
+              "field_name": "cpart_code",
+              "field_description": "cpart编码"
+            },
+            {
+              "field_name": "cpart_description",
+              "field_description": "cpart描述"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "system_function",
+      "name": "calculator"
+    },
+    {
+      "type": "call_function",
+      "name": "vectorCallSpartsByCpartDescription",
+      "function_type": "api"
+    }
+  ],
+  "system_prompt": {
+    "value": "你是一个产品匹配专家，擅长根据产品描述做二分类任务。",
+    "ref_objects": []
+  },
+  "task_prompt": {
+    "value": "## 任务描述\n 我会提供一个产品描述，你认真考核清单里的每项物件，判断每一项是否与产品描述一致，并给出理由",
+    "ref_objects": [
+      {
+        "id": 1,
+        "type": "input_type",
+        "name": "cpart_code",
+        "value": "c00001",
+        "tag": "cpart_code"
+      }
+    ]
+  },
+  "output": {
+    "cpartToSpartConsistancy": {
+      "variable_meta_type": "Object",
+      "variable_type": "List",
+      "variable_desc": "一致性比较结果"
+    }
+  },
+  "llm": {
+    "id": "llm001",
+    "name": "deepseek-chat"
+  }
+}

@@ -7,7 +7,6 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.memory import MemorySaver
 from typing_extensions import TypedDict
 from typing import Annotated
 import operator
@@ -71,7 +70,8 @@ class AgentFactory:
             agent_id = state.get("agent_id", "")
             
             # 使用PromptFormatter添加工具指导
-            system_prompt = PromptFormatter.add_tool_guidance(config.system_prompt, bool(tools))
+            system_prompt_text = config.system_prompt.value if hasattr(config.system_prompt, 'value') else str(config.system_prompt)
+            system_prompt = PromptFormatter.add_tool_guidance(system_prompt_text, bool(tools))
             
             system_message: SystemMessage = SystemMessage(content=system_prompt)
             
@@ -80,8 +80,9 @@ class AgentFactory:
             input_data = state.get("input_data", {}) or {}  # Ensure it's never None
             
             # 使用PromptFormatter格式化用户输入
+            task_prompt_text = config.task_prompt.value if hasattr(config.task_prompt, 'value') else str(config.task_prompt)
             formatted_input = PromptFormatter.format_user_input(
-                config.user_prompt_template,
+                task_prompt_text,
                 user_input,
                 input_data
             )
@@ -104,12 +105,13 @@ class AgentFactory:
                 
                 # 记录LLM调用
                 if execution_id and agent_id:
+                    system_prompt_text = config.system_prompt.value if hasattr(config.system_prompt, 'value') else str(config.system_prompt)
                     log_llm_call(
                         execution_id=execution_id,
                         agent_id=agent_id,
                         model="deepseek-chat",
                         messages=[
-                            {"role": "system", "content": config.system_prompt},
+                            {"role": "system", "content": system_prompt_text},
                             *[{"role": m.type, "content": m.content} for m in messages],
                             {"role": "user", "content": formatted_input}
                         ],
@@ -136,7 +138,7 @@ class AgentFactory:
             # 处理输出格式
             import json as json_module
             output_data = {}
-            if config.output_format:
+            if config.output:
                 # 如果有输出格式定义，尝试解析为结构化数据
                 try:
                     # 简单的JSON解析尝试
@@ -238,7 +240,8 @@ class AgentFactory:
         # 设置入口点
         workflow.set_entry_point("agent")
         
-        return workflow.compile(checkpointer=MemorySaver())
+        # 不使用checkpointer - 对话历史由前端通过conversation_history管理
+        return workflow.compile()
     
     async def create_agent(self, config: AgentConfig) -> str:
         """创建Agent并返回ID"""
@@ -301,9 +304,8 @@ class AgentFactory:
                 elif msg.role == "assistant":
                     initial_state["messages"].append(AIMessage(content=msg.content))
             
-            # 流式执行Agent
+            # 流式执行Agent - 不需要thread_id,因为不使用checkpointer
             config = {
-                "configurable": {"thread_id": f"thread_{agent_id}"},
                 "recursion_limit": 50  # Increase limit to prevent premature termination
             }
             final_result = None
@@ -468,9 +470,8 @@ class AgentFactory:
                 elif msg.role == "assistant":
                     initial_state["messages"].append(AIMessage(content=msg.content))
             
-            # 执行Agent
+            # 执行Agent - 不需要thread_id,因为不使用checkpointer
             config = {
-                "configurable": {"thread_id": f"thread_{agent_id}"},
                 "recursion_limit": 50  # Increase limit to prevent premature termination
             }
             result = await agent_graph.ainvoke(initial_state, config)

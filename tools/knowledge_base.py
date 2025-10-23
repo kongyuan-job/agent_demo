@@ -4,7 +4,6 @@ Knowledge base search tool implementation
 
 from pydantic import BaseModel, Field
 from langchain_core.tools import Tool as LangChainTool
-from models import Tool as ToolConfig
 from .base import BaseTool
 
 
@@ -17,7 +16,7 @@ class KnowledgeBaseTool(BaseTool):
     """Knowledge base search tool"""
     
     @classmethod
-    def from_config(cls, tool_config: ToolConfig) -> LangChainTool:
+    def from_config(cls, tool_config) -> LangChainTool:
         """Create knowledge base tool from configuration"""
         async def knowledge_search_func(query: str) -> str:
             return await cls.execute(query=query)

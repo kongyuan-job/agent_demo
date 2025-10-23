@@ -9,53 +9,146 @@ class AgentStatus(str, Enum):
     ERROR = "error"
 
 class ToolType(str, Enum):
-    KNOWLEDGE_BASE = "knowledge_base"
-    CALCULATOR = "calculator"
-    WEB_SEARCH = "web_search"
-    API_CALL = "api_call"
-    CUSTOM_FUNCTION = "custom_function"
+    """工具类型"""
+    SYSTEM_FUNCTION = "system_function"  # 系统工具（计算器等）
+    CALL_FUNCTION = "call_function"      # 用户自定义工具（API等）
+    QUERY_OBJECTS = "query_objects"      # 本体工具（图数据库）
 
-class ParameterType(str, Enum):
-    STRING = "string"
-    INTEGER = "integer"
-    FLOAT = "float"
-    BOOLEAN = "boolean"
-    ARRAY = "array"
-    OBJECT = "object"
 
-class Parameter(BaseModel):
+
+class VariableMetaType(str, Enum):
+    """变量元类型"""
+    STRING = "String"
+    INTEGER = "Integer"
+    FLOAT = "Float"
+    BOOLEAN = "Boolean"
+    OBJECT = "Object"
+    ARRAY = "Array"
+
+class FunctionType(str, Enum):
+    """函数类型"""
+    API = "api"
+    LAMBDA = "lambda"
+    CUSTOM = "custom"
+
+class ReferenceObjectType(str, Enum):
+    """引用对象类型"""
+    INPUT = "input_type"      # 引用输入参数
+    TOOL_RESULT = "tool_result"  # 引用工具结果
+    VARIABLE = "variable"     # 引用变量
+
+# ==================== 新模型定义 ====================
+
+class InputParameter(BaseModel):
+    """输入参数定义"""
     model_config = ConfigDict(use_enum_values=True)
     
-    name: str
-    type: ParameterType
-    description: str
+    type: VariableMetaType
+    value: Optional[Any] = None  # 默认值
+    description: Optional[str] = None
+    required: bool = False
+
+class OutputParameter(BaseModel):
+    """输出参数定义"""
+    model_config = ConfigDict(use_enum_values=True)
+    
+    variable_meta_type: VariableMetaType  # 元类型（String, Object等）
+    variable_type: Optional[str] = None   # 具体类型（List, Dict等）
+    variable_desc: str                     # 变量描述
     required: bool = True
-    default_value: Optional[Any] = None
-    enum_values: Optional[List[Any]] = None
 
-class Tool(BaseModel):
+class ObjectField(BaseModel):
+    """对象字段定义（用于query_objects工具）"""
+    field_name: str
+    field_description: str
+    field_type: Optional[str] = None
+
+class QueryObject(BaseModel):
+    """查询对象定义（用于query_objects工具）"""
+    object_code: str
+    object_description: str
+    fields: List[ObjectField] = []
+
+class ReferenceObject(BaseModel):
+    """提示词中的引用对象"""
     model_config = ConfigDict(use_enum_values=True)
     
-    id: Optional[str] = None
-    name: str
-    description: str
-    type: ToolType
-    parameters: List[Parameter] = []
-    config: Dict[str, Any] = {}
+    id: int                          # 引用ID
+    type: ReferenceObjectType        # 引用类型
+    name: str                        # 引用名称
+    value: Optional[Any] = None      # 引用值（可选）
+    tag: Optional[str] = None        # 标签（用于模板替换）
+
+class SystemPrompt(BaseModel):
+    """系统提示词"""
+    value: str                                    # 提示词内容
+    ref_objects: List[ReferenceObject] = []      # 引用的对象列表
+
+class TaskPrompt(BaseModel):
+    """任务提示词"""
+    value: str                                    # 提示词内容
+    ref_objects: List[ReferenceObject] = []      # 引用的对象列表
+
+class LLMConfig(BaseModel):
+    """大模型配置"""
+    id: str                          # LLM ID
+    name: str                        # LLM名称（如 deepseek-chat, gpt-4等）
+    temperature: float = 0.7         # 温度值
+    max_tokens: int = 1000           # 最大token数
+    api_base: Optional[str] = None   # API地址（可选）
+    api_key: Optional[str] = None    # API密钥（可选）
+
+class SystemFunctionTool(BaseModel):
+    """系统函数工具"""
+    type: str = "system_function"
+    name: str                        # 系统函数名称（如calculator）
+    description: Optional[str] = None
+
+class CallFunctionTool(BaseModel):
+    """调用函数工具"""
+    type: str = "call_function"
+    name: str                        # 函数名称
+    function_type: FunctionType      # 函数类型（api, lambda, custom）
+    description: Optional[str] = None
+    config: Dict[str, Any] = {}      # 函数配置（如API地址、请求方法等）
+
+class QueryObjectsTool(BaseModel):
+    """查询对象工具（图数据库）"""
+    type: str = "query_objects"
+    objects: List[QueryObject] = []  # 查询的对象列表
+    description: Optional[str] = None
+
+# 工具联合类型
+AgentTool = Union[SystemFunctionTool, CallFunctionTool, QueryObjectsTool]
 
 class AgentConfig(BaseModel):
+    """Agent配置模型（新版）"""
     model_config = ConfigDict(use_enum_values=True)
     
+    # 基础信息
     id: Optional[str] = None
     name: str
     description: str
-    system_prompt: str
-    user_prompt_template: str
-    input_format: List[Parameter] = []
-    output_format: List[Parameter] = []
-    tools: List[Tool] = []
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=1000, ge=1, le=4000)
+    
+    # 输入参数（可选，支持多个）
+    input: Dict[str, InputParameter] = {}  # key为参数名，value为参数定义
+    
+    # 工具列表（可选，支持多个）
+    tools: List[Dict[str, Any]] = []  # 支持多种工具类型的混合列表
+    
+    # 系统提示词（必填）
+    system_prompt: SystemPrompt
+    
+    # 任务提示词（必填）
+    task_prompt: TaskPrompt
+    
+    # 输出参数（必填，支持多个）
+    output: Dict[str, OutputParameter]  # key为参数名，value为参数定义
+    
+    # 大模型配置（必填）
+    llm: LLMConfig
+    
+    # 状态和时间戳
     status: AgentStatus = AgentStatus.DRAFT
     created_at: str = ""
     updated_at: str = ""
