@@ -144,6 +144,25 @@ print(response.json())
 - `GET /api/parameter-types` - 获取参数类型
 - `GET /api/presets` - 获取预设配置
 
+## 🌟 新功能：Token级流式输出
+
+系统现在支持真正的Token级流式输出，可以逐个字符地显示Agent的响应，提供更加实时的用户体验。
+
+**特性**：
+- 逐字符实时显示LLM响应
+- 工具调用过程中的暂停和恢复
+- 完整的事件类型支持（开始、Token流、工具调用、完成等）
+- 前端实时更新界面
+
+**技术实现**：
+- 基于Server-Sent Events (SSE)协议
+- 使用LangGraph的astream方法
+- 支持工具调用过程中的流式暂停
+
+**文档**：
+- 实现详情请查看 [docs/TOKEN_STREAMING.md](docs/TOKEN_STREAMING.md)
+- 架构设计请查看 [docs/streaming_architecture.md](docs/streaming_architecture.md)
+
 ## 🏗️ System Architecture
 
 ### High-Level Overview

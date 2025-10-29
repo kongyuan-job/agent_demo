@@ -53,8 +53,7 @@ class AgentFactory:
         """根据配置动态创建LangGraph Agent"""
         llm = ChatOpenAI(
             model="deepseek-chat",
-            temperature=0.1,
-            api_key=Config.OPENAI_API_KEY
+            temperature=0.1
         )
         # 使用ToolFactory创建工具列表
         tools = [ToolFactory.create_tool(tool_config) for tool_config in config.tools]
@@ -257,6 +256,8 @@ class AgentFactory:
         """与Agent对话 - 流式输出版本"""
         agent_id = request.agent_id
         start_time = time.time()
+        execution_id = str(uuid.uuid4())  # Initialize early to avoid unbound variable error
+        streaming_tokens = False  # Initialize to avoid unbound variable error
         
         # 使用AgentManager获取配置
         config = self.agent_manager.get_agent_config(agent_id)
@@ -275,7 +276,6 @@ class AgentFactory:
             # 如果缓存中没有，重建
             agent_graph = self._create_agent_graph(config)
             self._graph_cache[agent_id] = agent_graph
-        execution_id = str(uuid.uuid4())
         
         try:
             # 发送开始事件
@@ -305,12 +305,13 @@ class AgentFactory:
                     initial_state["messages"].append(AIMessage(content=msg.content))
             
             # 流式执行Agent - 不需要thread_id,因为不使用checkpointer
-            config = {
-                "recursion_limit": 50  # Increase limit to prevent premature termination
-            }
+            from langchain_core.runnables import RunnableConfig
+            runnable_config = RunnableConfig(recursion_limit=50)  # Increase limit to prevent premature termination
+            
+            # Track if we're in a token streaming phase
             final_result = None
             
-            async for event in agent_graph.astream(initial_state, config):
+            async for event in agent_graph.astream(initial_state, runnable_config):
                 # event 是一个字典，key是节点名，value是该节点的输出
                 for node_name, node_output in event.items():
                     if node_name == "agent":
@@ -319,16 +320,38 @@ class AgentFactory:
                         if messages:
                             last_message = messages[-1]
                             
-                            # LLM响应
+                            # LLM响应 - token level streaming
                             if hasattr(last_message, 'content'):
-                                yield {
-                                    "type": "agent_message",
-                                    "content": last_message.content,
-                                    "timestamp": datetime.now().isoformat()
-                                }
+                                content = last_message.content
+                                # If we have content, stream it token by token
+                                if content:
+                                    # Send token_start event when we begin streaming
+                                    if not streaming_tokens:
+                                        yield {
+                                            "type": "token_stream_start",
+                                            "timestamp": datetime.now().isoformat()
+                                        }
+                                        streaming_tokens = True
+                                    
+                                    # Stream each character/token as it arrives
+                                    content_str = str(content)
+                                    for char in content_str:
+                                        yield {
+                                            "type": "token",
+                                            "content": char,
+                                            "timestamp": datetime.now().isoformat()
+                                        }
                             
                             # 工具调用
                             if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+                                # End any ongoing token streaming
+                                if streaming_tokens:
+                                    yield {
+                                        "type": "token_stream_end",
+                                        "timestamp": datetime.now().isoformat()
+                                    }
+                                    streaming_tokens = False
+                                    
                                 for tool_call in last_message.tool_calls:
                                     yield {
                                         "type": "tool_call_start",
@@ -338,6 +361,14 @@ class AgentFactory:
                                     }
                     
                     elif node_name == "tools":
+                        # End any ongoing token streaming when entering tools
+                        if streaming_tokens:
+                            yield {
+                                "type": "token_stream_end",
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            streaming_tokens = False
+                            
                         # 工具节点输出
                         messages = node_output.get("messages", [])
                         if messages:
@@ -351,6 +382,13 @@ class AgentFactory:
                     
                     # 保存最终结果
                     final_result = node_output
+            
+            # End any remaining token streaming
+            if streaming_tokens:
+                yield {
+                    "type": "token_stream_end",
+                    "timestamp": datetime.now().isoformat()
+                }
             
             # 执行完成
             execution_time = time.time() - start_time
@@ -385,6 +423,13 @@ class AgentFactory:
             }
             
         except Exception as e:
+            # End any remaining token streaming on error
+            if streaming_tokens:
+                yield {
+                    "type": "token_stream_end",
+                    "timestamp": datetime.now().isoformat()
+                }
+                
             execution_time = time.time() - start_time
             error_msg = f"对话失败: {str(e)}"
             
@@ -415,12 +460,12 @@ class AgentFactory:
         """与Agent对话 - 支持动态输入输出类型"""
         agent_id = request.agent_id
         start_time = time.time()
+        execution_id = str(uuid.uuid4())  # Initialize early to avoid unbound variable error
         
         # 使用AgentManager获取配置
         config = self.agent_manager.get_agent_config(agent_id)
         if not config:
             error_msg = f"Agent {agent_id} 不存在"
-            execution_id = str(uuid.uuid4())
             final_execution = AgentExecution(
                 execution_id=execution_id,
                 agent_id=agent_id,
@@ -449,9 +494,6 @@ class AgentFactory:
             self._graph_cache[agent_id] = agent_graph
         
         try:
-            # 生成执行ID
-            execution_id = str(uuid.uuid4())
-            
             # 构建初始状态 - 支持动态输入类型
             initial_state = {
                 "messages": [],
@@ -471,10 +513,9 @@ class AgentFactory:
                     initial_state["messages"].append(AIMessage(content=msg.content))
             
             # 执行Agent - 不需要thread_id,因为不使用checkpointer
-            config = {
-                "recursion_limit": 50  # Increase limit to prevent premature termination
-            }
-            result = await agent_graph.ainvoke(initial_state, config)
+            from langchain_core.runnables import RunnableConfig
+            runnable_config = RunnableConfig(recursion_limit=50)  # Increase limit to prevent premature termination
+            result = await agent_graph.ainvoke(initial_state, runnable_config)
             
             execution_time = time.time() - start_time
             response_data = result.get("response", "")
@@ -517,38 +558,20 @@ class AgentFactory:
             error_msg = f"对话失败: {str(e)}"
             
             # 记录失败的执行 - 使用同一个execution_id
-            if 'execution_id' in locals():
-                final_execution = AgentExecution(
-                    execution_id=execution_id,
-                    agent_id=agent_id,
-                    user_input=request.user_input,
-                    response=None,
-                    input_type=type(request.user_input).__name__,
-                    output_type="None",
-                    execution_time=execution_time,
-                    timestamp=datetime.now().isoformat(),
-                    metadata={"error_type": "execution_error", "error_details": str(e)},
-                    success=False,
-                    error_message=error_msg
-                )
-                observability_manager.log_execution(final_execution)
-            else:
-                # 如果还没有生成execution_id，创建新的
-                execution_id = str(uuid.uuid4())
-                final_execution = AgentExecution(
-                    execution_id=execution_id,
-                    agent_id=agent_id,
-                    user_input=request.user_input,
-                    response=None,
-                    input_type=type(request.user_input).__name__,
-                    output_type="None",
-                    execution_time=execution_time,
-                    timestamp=datetime.now().isoformat(),
-                    metadata={"error_type": "execution_error", "error_details": str(e)},
-                    success=False,
-                    error_message=error_msg
-                )
-                observability_manager.log_execution(final_execution)
+            final_execution = AgentExecution(
+                execution_id=execution_id,
+                agent_id=agent_id,
+                user_input=request.user_input,
+                response=None,
+                input_type=type(request.user_input).__name__,
+                output_type="None",
+                execution_time=execution_time,
+                timestamp=datetime.now().isoformat(),
+                metadata={"error_type": "execution_error", "error_details": str(e)},
+                success=False,
+                error_message=error_msg
+            )
+            observability_manager.log_execution(final_execution)
             
             return {
                 "success": False,
@@ -575,4 +598,3 @@ class AgentFactory:
 
 # 全局Agent工厂实例
 agent_factory = AgentFactory()
-

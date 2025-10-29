@@ -424,3 +424,4 @@ for (const [key, component] of Object.entries(IconsVue)) {
 }
 
 app.use(ElementPlus).mount('#app');
+

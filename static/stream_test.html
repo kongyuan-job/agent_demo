@@ -100,6 +100,15 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
+        /* Token streaming styles */
+        .token-stream {
+            background: #e3f2fd;
+            color: #1565c0;
+            border-left: 4px solid #2196f3;
+        }
+        .token-content {
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
@@ -157,6 +166,10 @@
                     </div>
                     <div v-else-if="message.type === 'tool-result'">
                         <strong>✅ 工具结果:</strong> {{ message.content }}
+                    </div>
+                    <div v-else-if="message.type === 'token-stream'">
+                        <strong>🔤 Token流:</strong> 
+                        <div class="token-content">{{ message.content }}</div>
                     </div>
                     <div v-else-if="message.type === 'error'">
                         <strong>❌ 错误:</strong> {{ message.content }}
@@ -216,7 +229,9 @@
                     messages: [],
                     userInput: '',
                     isStreaming: false,
-                    lastExecutionInfo: null
+                    lastExecutionInfo: null,
+                    // For token streaming
+                    currentTokenStreamMessage: null
                 };
             },
 
@@ -265,6 +280,7 @@
                     const userInput = this.userInput;
                     this.userInput = '';
                     this.isStreaming = true;
+                    this.currentTokenStreamMessage = null; // Reset token stream tracking
 
                     try {
                         // 使用流式API
@@ -320,6 +336,30 @@
                             });
                             break;
 
+                        case 'token_stream_start':
+                            // Create a new token stream message
+                            this.currentTokenStreamMessage = {
+                                type: 'token-stream',
+                                content: '',
+                                timestamp: event.timestamp
+                            };
+                            this.messages.push(this.currentTokenStreamMessage);
+                            break;
+
+                        case 'token':
+                            // Append token to current stream message
+                            if (this.currentTokenStreamMessage) {
+                                this.currentTokenStreamMessage.content += event.content;
+                                // Scroll to bottom to show streaming in real-time
+                                this.scrollToBottom();
+                            }
+                            break;
+
+                        case 'token_stream_end':
+                            // End current token stream
+                            this.currentTokenStreamMessage = null;
+                            break;
+
                         case 'agent_message':
                             this.messages.push({
                                 type: 'agent',
@@ -363,6 +403,8 @@
                                 content: event.message,
                                 timestamp: event.timestamp
                             });
+                            // Also end any ongoing token stream on error
+                            this.currentTokenStreamMessage = null;
                             break;
                     }
 
@@ -372,6 +414,7 @@
                 clearMessages() {
                     this.messages = [];
                     this.lastExecutionInfo = null;
+                    this.currentTokenStreamMessage = null;
                 },
 
                 scrollToBottom() {

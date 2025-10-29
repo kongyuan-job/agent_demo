@@ -97,6 +97,49 @@ sequenceDiagram
     Web->>User: 显示完整对话
 ```
 
+## Token流式输出数据流图
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant Web as Web界面
+    participant API as FastAPI
+    participant Factory as AgentFactory
+    participant LG as LangGraph
+    participant LLM as OpenAI
+    participant Tool as 工具
+
+    User->>Web: 输入消息
+    Web->>API: POST /api/chat/stream
+    API->>Factory: chat_with_agent_stream()
+    Factory->>Web: {"type": "start"}
+    
+    Factory->>LG: astream(state)
+    
+    loop Agent执行循环
+        LG->>LLM: invoke messages
+        LLM-->>LG: response stream
+        loop Token流式输出
+            LG->>Factory: token content
+            Factory->>Web: {"type": "token_stream_start"}
+            Factory->>Web: {"type": "token", "content": "逐个字符"}
+            Factory->>Web: {"type": "token_stream_end"}
+        end
+        
+        alt 需要工具调用
+            LG->>Factory: tool_call_start
+            Factory->>Web: {"type": "tool_call_start"}
+            LG->>Tool: execute
+            Tool-->>LG: result
+            LG->>Factory: tools node event
+            Factory->>Web: {"type": "tool_result"}
+        end
+    end
+    
+    Factory->>Web: {"type": "done"}
+    Web->>User: 显示完整对话
+```
+
 ## 事件流转图
 
 ```mermaid
@@ -104,8 +147,13 @@ stateDiagram-v2
     [*] --> Start: 用户发送消息
     Start --> AgentThinking: start事件
     
-    AgentThinking --> ToolCall: agent_message事件
-    AgentThinking --> FinalResponse: agent_message事件
+    AgentThinking --> TokenStreaming: token_stream_start事件
+    TokenStreaming --> TokenOutput: token事件 (逐个字符)
+    TokenOutput --> TokenStreaming: 更多token
+    TokenStreaming --> TokenEnd: token_stream_end事件
+    
+    TokenEnd --> ToolCall: agent_message事件
+    TokenEnd --> FinalResponse: agent_message事件
     
     ToolCall --> ToolExecuting: tool_call_start事件
     ToolExecuting --> ToolResult: tool_result事件
@@ -115,6 +163,7 @@ stateDiagram-v2
     Done --> [*]
     
     AgentThinking --> Error: 发生错误
+    TokenStreaming --> Error: 发生错误
     ToolCall --> Error: 发生错误
     ToolExecuting --> Error: 发生错误
     Error --> [*]: error事件
@@ -218,6 +267,19 @@ classDiagram
         +agent_id: string
     }
     
+    class TokenStreamStartEvent {
+        +timestamp: string
+    }
+    
+    class TokenEvent {
+        +content: string
+        +timestamp: string
+    }
+    
+    class TokenStreamEndEvent {
+        +timestamp: string
+    }
+    
     class AgentMessageEvent {
         +content: string
     }
@@ -243,6 +305,9 @@ classDiagram
     }
     
     StreamEvent <|-- StartEvent
+    StreamEvent <|-- TokenStreamStartEvent
+    StreamEvent <|-- TokenEvent
+    StreamEvent <|-- TokenStreamEndEvent
     StreamEvent <|-- AgentMessageEvent
     StreamEvent <|-- ToolCallStartEvent
     StreamEvent <|-- ToolResultEvent
@@ -371,6 +436,7 @@ graph LR
         G[断点续传]
         H[多语言SDK]
         I[流式输入]
+        J[Token级流式输出]
     end
     
     A --> D
@@ -380,6 +446,7 @@ graph LR
     A --> G
     C --> H
     A --> I
+    B --> J
 ```
 
 ## 安全考虑
@@ -404,3 +471,7 @@ graph TD
     Throttle --> Response
     Reject --> Response
 ```
+
+## Token流式输出实现详情
+
+有关Token流式输出的具体实现，请参阅 [TOKEN_STREAMING.md](TOKEN_STREAMING.md) 文档。
